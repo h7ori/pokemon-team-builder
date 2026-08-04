@@ -1,13 +1,24 @@
 'use client';
 
+import { useState, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Swords, FileText, Trash2, ArrowLeft } from 'lucide-react';
+import {
+  Plus,
+  Swords,
+  FileText,
+  Trash2,
+  ArrowLeft,
+  Search,
+  Copy,
+  Edit3,
+  Star,
+  FolderOpen,
+} from 'lucide-react';
 import { useTeamStore } from '@/stores/team-store';
 import { PokemonSprite } from '@/components/shared/PokemonSprite';
 import { TypeBadge } from '@/components/shared/TypeBadge';
-import { useState, useMemo, useCallback } from 'react';
 import { getAllSpecies, getSpecies } from '@/lib/pokemon/data-provider';
-import type { PokemonType, TeamPokemon } from '@/types/pokemon';
+import type { PokemonType } from '@/types/pokemon';
 import { createEmptyPokemon } from '@/types/pokemon';
 import { PokemonEditorFull } from '@/components/team/PokemonEditorFull';
 import { ShowdownPasteModal } from '@/components/team/ShowdownPasteModal';
@@ -21,34 +32,73 @@ export default function TeamBuilderPage() {
     createTeam,
     setActiveTeam,
     setSelectedSlot,
+    deleteTeam,
+    duplicateTeam,
+    renameTeam,
+    toggleFavorite,
     addPokemon,
     removePokemon,
     updatePokemon,
-    importTeam,
   } = useTeamStore();
 
+  // View state: 'list' (all teams list like Showdown) vs 'editor' (single team detail/editor)
+  const [view, setView] = useState<'list' | 'editor'>('list');
+
+  // Filter state for teams list
+  const [folderFilter, setFolderFilter] = useState<'all' | 'gen9' | 'favorites'>('all');
+  const [teamSearchQuery, setTeamSearchQuery] = useState('');
+
+  // Pokémon species search modal state inside editor
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [showTeamShowdownModal, setShowTeamShowdownModal] = useState(false);
+  const [showImportModalInList, setShowImportModalInList] = useState(false);
 
   const activeTeam = useMemo(
     () => teams.find((t) => t.id === activeTeamId) ?? null,
     [teams, activeTeamId]
   );
 
-  // Initialize team if none exists
-  const ensureTeam = useCallback(() => {
-    if (!activeTeamId || !activeTeam) {
-      const id = createTeam();
-      setActiveTeam(id);
-      return id;
-    }
-    return activeTeamId;
-  }, [activeTeamId, activeTeam, createTeam, setActiveTeam]);
+  // Filtered Teams List for Showdown-style list view
+  const filteredTeams = useMemo(() => {
+    let list = teams.filter((t) => !t.isArchived);
 
-  // Pokémon species search
+    if (folderFilter === 'favorites') {
+      list = list.filter((t) => t.isFavorite);
+    } else if (folderFilter === 'gen9') {
+      list = list.filter((t) => t.generation === 9);
+    }
+
+    if (teamSearchQuery.trim()) {
+      const q = teamSearchQuery.toLowerCase();
+      list = list.filter(
+        (t) =>
+          t.name.toLowerCase().includes(q) ||
+          t.pokemon.some((p) => p.species && p.species.toLowerCase().includes(q))
+      );
+    }
+
+    return list.sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [teams, folderFilter, teamSearchQuery]);
+
+  // Handle New Team creation
+  const handleNewTeam = () => {
+    const id = createTeam();
+    setActiveTeam(id);
+    setSelectedSlot(null);
+    setView('editor');
+  };
+
+  // Open existing team for editing
+  const handleOpenTeam = (id: string) => {
+    setActiveTeam(id);
+    setSelectedSlot(null);
+    setView('editor');
+  };
+
+  // Pokémon species search for adding slot
   const allSpecies = useMemo(() => getAllSpecies(9), []);
-  const fuse = useMemo(
+  const speciesFuse = useMemo(
     () =>
       new Fuse(allSpecies, {
         keys: ['name', 'baseSpecies', 'types'],
@@ -60,22 +110,22 @@ export default function TeamBuilderPage() {
 
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return allSpecies.slice(0, 100);
-    return fuse.search(searchQuery, { limit: 100 }).map((r) => r.item);
-  }, [searchQuery, fuse, allSpecies]);
+    return speciesFuse.search(searchQuery, { limit: 100 }).map((r) => r.item);
+  }, [searchQuery, speciesFuse, allSpecies]);
 
   const handleAddPokemon = useCallback(
     (speciesName: string) => {
-      const teamId = ensureTeam();
-      const team = useTeamStore.getState().teams.find((t) => t.id === teamId);
+      if (!activeTeamId) return;
+      const team = useTeamStore.getState().teams.find((t) => t.id === activeTeamId);
       if (!team || team.pokemon.length >= 6) return;
 
       const newPokemon = createEmptyPokemon();
       newPokemon.species = speciesName;
-      addPokemon(teamId, newPokemon);
+      addPokemon(activeTeamId, newPokemon);
       setShowSearch(false);
       setSearchQuery('');
     },
-    [ensureTeam, addPokemon]
+    [activeTeamId, addPokemon]
   );
 
   const handleSlotClick = (index: number) => {
@@ -92,171 +142,362 @@ export default function TeamBuilderPage() {
       : null;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      {/* Page Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-wrap items-center justify-between gap-4"
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg">
-            <Swords className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={activeTeam?.name || 'Untitled Team'}
-                onChange={(e) => {
-                  if (activeTeamId) {
-                    useTeamStore.getState().renameTeam(activeTeamId, e.target.value);
-                  }
-                }}
-                className="text-xl font-bold bg-transparent outline-none border-b border-transparent hover:border-slate-500 focus:border-indigo-500 transition-colors"
-                style={{ color: 'var(--text-primary)' }}
-              />
+    <div className="max-w-7xl mx-auto space-y-6 select-none">
+      {/* VIEW 1: SHOWDOWN-STYLE TEAMS LIST VIEW */}
+      {view === 'list' && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="grid grid-cols-1 lg:grid-cols-12 gap-6"
+        >
+          {/* Left Folder Sidebar */}
+          <div className="lg:col-span-3 card p-4 space-y-4 bg-slate-900 border-slate-800">
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b pb-2 border-slate-800">
+              Folders & Formats
             </div>
-            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-              Gen 9 • {activeTeam?.pokemon.length || 0}/6 Pokémon
-            </p>
+
+            <div className="space-y-1 text-xs">
+              <button
+                onClick={() => setFolderFilter('all')}
+                className={`w-full text-left px-3 py-2 rounded-xl font-semibold flex items-center justify-between transition-colors ${
+                  folderFilter === 'all' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>(all teams)</span>
+                <span className="font-mono text-[11px] opacity-80">{teams.length}</span>
+              </button>
+
+              <button
+                onClick={() => setFolderFilter('gen9')}
+                className={`w-full text-left px-3 py-2 rounded-xl font-semibold flex items-center justify-between transition-colors ${
+                  folderFilter === 'gen9' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>Gen 9</span>
+                <span className="font-mono text-[11px] opacity-80">
+                  {teams.filter((t) => t.generation === 9).length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => setFolderFilter('favorites')}
+                className={`w-full text-left px-3 py-2 rounded-xl font-semibold flex items-center justify-between transition-colors ${
+                  folderFilter === 'favorites' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />
+                  Favorites
+                </span>
+                <span className="font-mono text-[11px] opacity-80">
+                  {teams.filter((t) => t.isFavorite).length}
+                </span>
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowTeamShowdownModal(true)}
-            className="inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-colors"
-            style={{
-              borderColor: 'var(--border-secondary)',
-              color: 'var(--text-primary)',
-            }}
-          >
-            <FileText className="h-4 w-4 text-indigo-500" />
-            Import / Export Team Paste
-          </button>
-          <button
-            onClick={() => setShowSearch(true)}
-            className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-purple-600 shadow-md transition-all hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]"
-          >
-            <Plus className="h-4 w-4" />
-            Add Pokémon
-          </button>
-        </div>
-      </motion.div>
+          {/* Main Teams List Area */}
+          <div className="lg:col-span-9 space-y-5">
+            {/* Header Greeting Banner */}
+            <div className="card p-5 bg-gradient-to-r from-slate-900 via-indigo-950/60 to-slate-900 border-slate-800 space-y-2">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <Swords className="h-5 w-5 text-indigo-400" />
+                Teams Library ({filteredTeams.length})
+              </h2>
+              <p className="text-xs text-slate-400">
+                Create, organize, and manage your competitive Pokémon teams. All teams are automatically saved locally on your device!
+              </p>
+            </div>
 
-      {/* 6 Pokémon Cards Grid */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.1 }}
-        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4"
-      >
-        {Array.from({ length: 6 }).map((_, index) => {
-          const pokemon = activeTeam?.pokemon[index] ?? null;
-          const isSelected = selectedSlot === index;
-          const speciesData = pokemon?.species ? getSpecies(pokemon.species) : null;
+            {/* Action Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleNewTeam}
+                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow hover:bg-indigo-500 transition-all"
+                >
+                  <Plus className="h-4 w-4" />
+                  New Team
+                </button>
+                <button
+                  onClick={() => setShowImportModalInList(true)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 transition-all"
+                >
+                  <FileText className="h-4 w-4 text-indigo-400" />
+                  Import from Text
+                </button>
+              </div>
 
-          return (
-            <motion.div
-              key={index}
-              onClick={() => handleSlotClick(index)}
-              className="card card-interactive p-4 flex flex-col items-center justify-between min-h-[220px] relative text-center cursor-pointer"
-              style={{
-                borderColor: isSelected ? 'var(--border-focus)' : undefined,
-                boxShadow: isSelected ? 'var(--shadow-glow)' : undefined,
-              }}
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              {pokemon?.species ? (
-                <>
-                  <div className="relative">
-                    <PokemonSprite
-                      name={pokemon.species}
-                      dexNum={speciesData?.num || 0}
-                      size={72}
-                      shiny={pokemon.isShiny}
-                      animated
-                    />
-                  </div>
+              {/* Team Search Box */}
+              <div className="flex items-center gap-2 border border-slate-800 bg-slate-950 px-3 py-1.5 rounded-xl w-full sm:w-64">
+                <Search className="h-3.5 w-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={teamSearchQuery}
+                  onChange={(e) => setTeamSearchQuery(e.target.value)}
+                  placeholder="search teams..."
+                  className="w-full bg-transparent text-xs text-white outline-none"
+                />
+              </div>
+            </div>
 
-                  <div className="space-y-1 w-full">
-                    <span className="text-sm font-bold truncate block" style={{ color: 'var(--text-primary)' }}>
-                      {pokemon.nickname || pokemon.species}
-                    </span>
+            {/* Teams List Cards */}
+            {filteredTeams.length === 0 ? (
+              <div className="card p-10 text-center space-y-3 bg-slate-900/60 border-slate-800">
+                <FolderOpen className="h-10 w-10 text-slate-500 mx-auto" />
+                <p className="text-sm font-bold text-white">No teams found</p>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Click 'New Team' above to start building your first competitive team!
+                </p>
+                <button
+                  onClick={handleNewTeam}
+                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow hover:bg-indigo-500 transition-all"
+                >
+                  <Plus className="h-4 w-4" />
+                  New Team
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredTeams.map((t) => (
+                  <motion.div
+                    key={t.id}
+                    onClick={() => handleOpenTeam(t.id)}
+                    className="card card-interactive p-4 bg-slate-900 border-slate-800 hover:border-indigo-500/60 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 cursor-pointer"
+                  >
+                    <div className="space-y-2 flex-1 min-w-0">
+                      {/* Inline Renaming Input */}
+                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-500/30 flex-shrink-0">
+                          [gen{t.generation}]
+                        </span>
 
-                    <div className="flex gap-1 justify-center flex-wrap">
-                      {speciesData?.types.map((t) => (
-                        <TypeBadge key={t} type={t as PokemonType} size="sm" />
-                      ))}
+                        <div className="relative flex-1 min-w-[150px] max-w-[280px]">
+                          <input
+                            type="text"
+                            value={t.name}
+                            onChange={(e) => renameTeam(t.id, e.target.value)}
+                            placeholder="Team Name..."
+                            className="w-full bg-slate-950/90 border border-slate-800 hover:border-indigo-500/60 focus:border-indigo-500 focus:bg-slate-950 text-xs font-bold text-white rounded-lg px-2.5 py-1 outline-none transition-all"
+                          />
+                        </div>
+
+                        <button
+                          onClick={() => toggleFavorite(t.id)}
+                          title={t.isFavorite ? 'Unfavorite' : 'Favorite'}
+                          className="p-1 rounded hover:bg-slate-800 transition-colors"
+                        >
+                          <Star
+                            className={`h-4 w-4 ${
+                              t.isFavorite ? 'text-amber-400 fill-amber-400' : 'text-slate-500 hover:text-amber-400'
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      {/* 6 Pokémon Sprites Row */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {t.pokemon.length > 0 ? (
+                          t.pokemon.map((p) => (
+                            <div
+                              key={p.id}
+                              className="w-9 h-9 rounded-full bg-slate-950 border border-slate-800 flex items-center justify-center overflow-hidden"
+                            >
+                              {p.species && (
+                                <PokemonSprite
+                                  name={p.species}
+                                  dexNum={0}
+                                  size={34}
+                                  animated={false}
+                                />
+                              )}
+                            </div>
+                          ))
+                        ) : (
+                          <span className="text-xs text-slate-500 italic">Empty team</span>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="text-[11px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
-                      {pokemon.item || 'No Item'}
+                    {/* Quick Card Action Buttons */}
+                    <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => handleOpenTeam(t.id)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 text-xs font-semibold hover:bg-indigo-600 hover:text-white transition-colors"
+                      >
+                        <Edit3 className="h-3.5 w-3.5" />
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => duplicateTeam(t.id)}
+                        title="Duplicate Team"
+                        className="p-1.5 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 hover:text-white hover:border-slate-700 transition-colors"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => deleteTeam(t.id)}
+                        title="Delete Team"
+                        className="p-1.5 rounded-lg border border-red-500/20 bg-red-950/20 text-red-400 hover:bg-red-600 hover:text-white transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                  </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
 
-                  <div className="text-[10px] text-slate-400 font-mono mt-1">
-                    Lv. {pokemon.level}
-                  </div>
+      {/* VIEW 2: TEAM DETAIL & POKÉMON EDITOR VIEW */}
+      {view === 'editor' && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6"
+        >
+          {/* Top Navigation Bar with BACK BUTTON */}
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4 border-slate-800">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setView('list')}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2 text-xs font-bold text-slate-200 hover:bg-indigo-600 hover:text-white transition-all shadow-md"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to Teams
+              </button>
 
-                  {/* Remove Button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (activeTeamId) removePokemon(activeTeamId, index);
-                    }}
-                    className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-xs transition-colors hover:bg-red-500 hover:text-white"
-                    style={{
-                      background: 'var(--bg-tertiary)',
-                      color: 'var(--text-secondary)',
-                    }}
-                    aria-label="Remove Pokémon"
-                  >
-                    ×
-                  </button>
-                </>
-              ) : (
-                <div className="my-auto flex flex-col items-center gap-2">
-                  <div
-                    className="w-12 h-12 rounded-full flex items-center justify-center border-2 border-dashed"
-                    style={{
-                      borderColor: 'var(--border-secondary)',
-                      color: 'var(--text-tertiary)',
-                    }}
-                  >
-                    <Plus className="h-5 w-5" />
-                  </div>
-                  <span className="text-xs font-semibold" style={{ color: 'var(--text-tertiary)' }}>
-                    Slot {index + 1}
-                  </span>
-                </div>
-              )}
+              <div className="h-6 w-px bg-slate-800" />
+
+              <div>
+                <input
+                  type="text"
+                  value={activeTeam?.name || 'Untitled Team'}
+                  onChange={(e) => {
+                    if (activeTeamId) {
+                      renameTeam(activeTeamId, e.target.value);
+                    }
+                  }}
+                  className="text-xl font-bold bg-transparent outline-none border-b border-transparent hover:border-slate-500 focus:border-indigo-500 transition-colors text-white"
+                />
+                <p className="text-xs text-slate-400">
+                  Gen {activeTeam?.generation || 9} • {activeTeam?.pokemon.length || 0}/6 Pokémon
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowTeamShowdownModal(true)}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800 transition-colors"
+              >
+                <FileText className="h-4 w-4 text-indigo-400" />
+                Import / Export Team Paste
+              </button>
+              <button
+                onClick={() => setShowSearch(true)}
+                className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md transition-all"
+              >
+                <Plus className="h-4 w-4" />
+                Add Pokémon
+              </button>
+            </div>
+          </div>
+
+          {/* 6 Pokémon Cards Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            {Array.from({ length: 6 }).map((_, index) => {
+              const pokemon = activeTeam?.pokemon[index] ?? null;
+              const isSelected = selectedSlot === index;
+              const speciesData = pokemon?.species ? getSpecies(pokemon.species) : null;
+
+              return (
+                <motion.div
+                  key={index}
+                  onClick={() => handleSlotClick(index)}
+                  className={`card card-interactive p-4 flex flex-col items-center justify-between min-h-[220px] relative text-center cursor-pointer transition-all ${
+                    isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/40 bg-indigo-950/20' : 'bg-slate-900 border-slate-800'
+                  }`}
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  {pokemon?.species ? (
+                    <>
+                      <div className="relative">
+                        <PokemonSprite
+                          name={pokemon.species}
+                          dexNum={speciesData?.num || 0}
+                          size={72}
+                          shiny={pokemon.isShiny}
+                          animated
+                        />
+                      </div>
+
+                      <div className="space-y-1 w-full">
+                        <span className="text-xs font-bold truncate block text-white">
+                          {pokemon.nickname || pokemon.species}
+                        </span>
+
+                        <div className="flex gap-1 justify-center flex-wrap">
+                          {speciesData?.types.map((t) => (
+                            <TypeBadge key={t} type={t as PokemonType} size="sm" />
+                          ))}
+                        </div>
+
+                        <div className="text-[10px] font-mono text-slate-400 truncate">
+                          {pokemon.item || 'No Item'}
+                        </div>
+                      </div>
+
+                      <div className="text-[10px] text-slate-400 font-mono mt-1">
+                        Lv. {pokemon.level}
+                      </div>
+
+                      {/* Remove Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (activeTeamId) removePokemon(activeTeamId, index);
+                        }}
+                        className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-xs transition-colors bg-slate-800 text-slate-400 hover:bg-rose-600 hover:text-white"
+                        aria-label="Remove Pokémon"
+                      >
+                        ×
+                      </button>
+                    </>
+                  ) : (
+                    <div className="my-auto flex flex-col items-center gap-2">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center border-2 border-dashed border-slate-700 text-slate-500">
+                        <Plus className="h-5 w-5" />
+                      </div>
+                      <span className="text-xs font-semibold text-slate-500">
+                        Slot {index + 1}
+                      </span>
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })}
+          </div>
+
+          {/* Detailed Pokémon Editor Panel */}
+          {selectedPokemon && activeTeamId && selectedSlot !== null && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+              <PokemonEditorFull
+                pokemon={selectedPokemon}
+                onUpdate={(updates) => updatePokemon(activeTeamId, selectedSlot, updates)}
+                onDelete={() => removePokemon(activeTeamId, selectedSlot)}
+              />
             </motion.div>
-          );
-        })}
-      </motion.div>
-
-      {/* Pokémon Editor (Shown when slot selected) */}
-      {selectedPokemon && activeTeamId && selectedSlot !== null && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <PokemonEditorFull
-            pokemon={selectedPokemon}
-            onUpdate={(updates) => updatePokemon(activeTeamId, selectedSlot, updates)}
-            onDelete={() => removePokemon(activeTeamId, selectedSlot)}
-          />
+          )}
         </motion.div>
       )}
 
       {/* Add Pokémon Search Modal */}
       {showSearch && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="fixed inset-0 z-[100] flex items-start justify-center pt-[10vh] p-4"
-        >
-          {/* Backdrop */}
+        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[10vh] p-4">
           <div
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => {
@@ -265,52 +506,38 @@ export default function TeamBuilderPage() {
             }}
           />
 
-          {/* Modal */}
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: -20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            className="relative z-10 w-full max-w-3xl rounded-2xl border overflow-hidden shadow-2xl flex flex-col max-h-[80vh]"
-            style={{
-              background: 'var(--bg-card)',
-              borderColor: 'var(--border-primary)',
-            }}
+            className="relative z-10 w-full max-w-3xl rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden shadow-2xl flex flex-col max-h-[80vh]"
           >
-            {/* Search Input */}
-            <div className="flex items-center gap-3 border-b px-4 py-3" style={{ borderColor: 'var(--border-primary)' }}>
-              <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+            <div className="flex items-center gap-3 border-b border-slate-800 px-4 py-3">
+              <Search className="h-5 w-5 text-slate-400" />
               <input
                 autoFocus
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search Pokémon or form (e.g. Steelix, Steelix-Mega, Charizard-Gmax)..."
-                className="flex-1 bg-transparent text-sm outline-none"
-                style={{ color: 'var(--text-primary)' }}
+                className="flex-1 bg-transparent text-sm outline-none text-white"
               />
               <button
                 onClick={() => {
                   setShowSearch(false);
                   setSearchQuery('');
                 }}
-                className="rounded-lg px-2.5 py-1 text-xs font-medium"
-                style={{
-                  background: 'var(--bg-tertiary)',
-                  color: 'var(--text-secondary)',
-                }}
+                className="rounded-lg px-2.5 py-1 text-xs font-medium bg-slate-800 text-slate-300"
               >
                 ESC
               </button>
             </div>
 
-            {/* Species & Forms Grid */}
             <div className="overflow-y-auto p-3 flex-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                 {searchResults.map((species) => (
                   <button
                     key={species.name}
                     onClick={() => handleAddPokemon(species.name)}
-                    className="flex items-center gap-3 rounded-xl p-3 text-left transition-all card card-interactive"
+                    className="flex items-center gap-3 rounded-xl p-3 text-left transition-all card card-interactive bg-slate-950 border-slate-800 hover:border-indigo-500"
                   >
                     <PokemonSprite
                       name={species.name}
@@ -319,7 +546,7 @@ export default function TeamBuilderPage() {
                       animated={false}
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>
+                      <div className="text-xs font-bold truncate text-white">
                         {species.name}
                       </div>
                       <div className="flex gap-1 mt-1">
@@ -336,25 +563,31 @@ export default function TeamBuilderPage() {
               </div>
             </div>
           </motion.div>
-        </motion.div>
+        </div>
       )}
 
       {/* Team Showdown Import/Export Modal */}
-      {showTeamShowdownModal && activeTeam && (
+      {(showTeamShowdownModal || showImportModalInList) && (
         <ShowdownPasteModal
-          isOpen={showTeamShowdownModal}
-          onClose={() => setShowTeamShowdownModal(false)}
+          isOpen={showTeamShowdownModal || showImportModalInList}
+          onClose={() => {
+            setShowTeamShowdownModal(false);
+            setShowImportModalInList(false);
+          }}
           mode="team"
-          currentTeam={activeTeam.pokemon}
+          currentTeam={activeTeam?.pokemon || []}
           onImportTeam={(importedPokemonList) => {
-            if (activeTeamId) {
-              importedPokemonList.forEach((p, i) => {
-                if (i < 6) {
-                  useTeamStore.getState().setPokemonSpecies(activeTeamId, i, p.species);
-                  useTeamStore.getState().updatePokemon(activeTeamId, i, p);
-                }
-              });
-            }
+            const targetId = activeTeamId || createTeam();
+            setActiveTeam(targetId);
+            importedPokemonList.forEach((p, i) => {
+              if (i < 6) {
+                useTeamStore.getState().setPokemonSpecies(targetId, i, p.species);
+                useTeamStore.getState().updatePokemon(targetId, i, p);
+              }
+            });
+            setShowTeamShowdownModal(false);
+            setShowImportModalInList(false);
+            setView('editor');
           }}
         />
       )}

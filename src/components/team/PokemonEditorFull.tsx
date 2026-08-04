@@ -12,6 +12,7 @@ import {
   Zap,
   Shield,
   Sparkles,
+  AlertTriangle,
 } from 'lucide-react';
 import type { TeamPokemon, StatName, PokemonType, Gender, BaseStats } from '@/types/pokemon';
 import {
@@ -77,6 +78,7 @@ export function PokemonEditorFull({
   const [activeSection, setActiveSection] = useState<'moves' | 'stats' | 'items' | 'abilities'>('moves');
   const [activeMoveSlot, setActiveMoveSlot] = useState<number>(0);
   const [moveSearchQuery, setMoveSearchQuery] = useState('');
+  const [showIllegalMoves, setShowIllegalMoves] = useState(false);
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [abilitySearchQuery, setAbilitySearchQuery] = useState('');
   const [showShowdownModal, setShowShowdownModal] = useState(false);
@@ -98,7 +100,7 @@ export function PokemonEditorFull({
     return getSpeciesForms(currentSpeciesData.baseSpecies || pokemon.species);
   }, [currentSpeciesData, pokemon.species]);
 
-  // Load learnable moves for species
+  // Load learnable moves for species with legality tagging
   useEffect(() => {
     let isMounted = true;
     if (pokemon.species) {
@@ -331,15 +333,23 @@ export function PokemonEditorFull({
     }
   };
 
-  // Filtered Move List
+  // Requirement 2: Filtered Move List (Default shows ONLY legal moves that species can learn; displays ILLEGAL badge if illegal)
   const filteredMoves = useMemo(() => {
-    if (!moveSearchQuery.trim()) return learnableMoves;
-    const fuse = new Fuse(learnableMoves, {
+    let source = learnableMoves;
+
+    // Filter illegal moves unless user turns on showIllegalMoves or typed a specific search query
+    if (!showIllegalMoves && !moveSearchQuery.trim()) {
+      source = source.filter((m) => !m.isIllegal);
+    }
+
+    if (!moveSearchQuery.trim()) return source;
+
+    const fuse = new Fuse(source, {
       keys: ['name', 'type', 'shortDesc'],
       threshold: 0.3,
     });
-    return fuse.search(moveSearchQuery, { limit: 100 }).map((r) => r.item);
-  }, [learnableMoves, moveSearchQuery]);
+    return fuse.search(moveSearchQuery, { limit: 120 }).map((r) => r.item);
+  }, [learnableMoves, moveSearchQuery, showIllegalMoves]);
 
   // Filtered Items
   const popularItemsData = useMemo(() => {
@@ -708,18 +718,31 @@ export function PokemonEditorFull({
             </div>
           )}
 
-          <div className="flex items-center gap-3 border rounded-xl px-3 py-2" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-primary)' }}>
-            <Search className="h-4 w-4 text-slate-400" />
-            <input
-              value={moveSearchQuery}
-              onChange={(e) => setMoveSearchQuery(e.target.value)}
-              placeholder="Search moves..."
-              className="flex-1 bg-transparent text-xs outline-none text-white"
-            />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 border rounded-xl px-3 py-2 flex-1 min-w-[240px]" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-primary)' }}>
+              <Search className="h-4 w-4 text-slate-400" />
+              <input
+                value={moveSearchQuery}
+                onChange={(e) => setMoveSearchQuery(e.target.value)}
+                placeholder="Search moves..."
+                className="flex-1 bg-transparent text-xs outline-none text-white"
+              />
+            </div>
+
+            {/* Requirement 2: Toggle to show/hide illegal moves */}
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-300 bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl">
+              <input
+                type="checkbox"
+                checked={showIllegalMoves}
+                onChange={(e) => setShowIllegalMoves(e.target.checked)}
+                className="accent-indigo-500"
+              />
+              Show Illegal Moves
+            </label>
           </div>
 
           <div className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b pb-2 flex justify-between px-2" style={{ borderColor: 'var(--border-primary)' }}>
-            <span>Moves for {pokemon.species}</span>
+            <span>Learnable Moves for {pokemon.species}</span>
             <span>Name / Type / Cat / Power / Acc / PP</span>
           </div>
 
@@ -733,17 +756,28 @@ export function PokemonEditorFull({
                 <button
                   key={move.id}
                   onClick={() => handleSelectMove(move.name)}
-                  className="w-full card card-interactive p-2.5 flex items-center justify-between text-left transition-all hover:border-blue-500"
-                  style={{ background: 'var(--bg-card)' }}
+                  className={`w-full card card-interactive p-2.5 flex items-center justify-between text-left transition-all hover:border-blue-500 ${
+                    move.isIllegal ? 'border-amber-500/40 bg-amber-950/10' : ''
+                  }`}
+                  style={{ background: move.isIllegal ? undefined : 'var(--bg-card)' }}
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <span className="font-semibold text-xs text-white truncate w-36">
+                    <span className="font-semibold text-xs text-white truncate w-36 flex items-center gap-1.5">
                       {move.name}
                     </span>
                     <TypeBadge type={move.type} size="sm" />
                     <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-slate-800 text-slate-300 font-semibold">
                       {move.category}
                     </span>
+
+                    {/* Requirement 2: ILLEGAL badge for moves species cannot learn */}
+                    {move.isIllegal && (
+                      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded font-mono bg-rose-950 text-rose-400 font-bold border border-rose-500/40">
+                        <AlertTriangle className="h-3 w-3 text-rose-400" />
+                        ILLEGAL
+                      </span>
+                    )}
+
                     <span className="text-xs text-slate-400 truncate flex-1 hidden sm:inline">
                       {move.shortDesc || move.desc}
                     </span>
@@ -761,14 +795,13 @@ export function PokemonEditorFull({
         </div>
       )}
 
-      {/* PANEL 2: EVS & IVS SLIDERS PANEL WITH FORMAT SELECTOR & EV DISPLAY MODIFIERS */}
+      {/* PANEL 2: EVS & IVS SLIDERS PANEL */}
       {activeSection === 'stats' && (
         <div className="card p-5 space-y-4" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
           <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: 'var(--border-primary)' }}>
             <div className="flex items-center gap-4">
               <h3 className="font-bold text-sm text-white">EVs & IVs Editor</h3>
 
-              {/* Requirement 2: Format Switcher (Gen 9 / 510 EVs vs Champions / 66 Points) */}
               <div className="flex items-center gap-1 rounded-lg border p-0.5 text-xs" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-primary)' }}>
                 <button
                   onClick={() => setEvMode('standard')}
@@ -812,19 +845,16 @@ export function PokemonEditorFull({
               const isPlus = currentNature.plus === stat;
               const isMinus = currentNature.minus === stat;
 
-              // Requirement 1: Display string format with + or - right inside the EV box
               const formattedEvString = ev > 0 ? `${ev}${isPlus ? '+' : isMinus ? '-' : ''}` : isPlus ? '0+' : isMinus ? '0-' : '—';
 
               return (
                 <div key={stat} className="grid grid-cols-12 gap-3 items-center text-xs">
-                  {/* Stat Name */}
                   <div className="col-span-3 sm:col-span-2 font-bold flex items-center gap-1" style={{ color: 'var(--text-primary)' }}>
                     {STAT_LABELS[stat]}
                     {isPlus && <span className="text-emerald-400 font-extrabold text-sm">+</span>}
                     {isMinus && <span className="text-rose-400 font-extrabold text-sm">-</span>}
                   </div>
 
-                  {/* Base Stat + Bar */}
                   <div className="col-span-2 sm:col-span-2 flex items-center gap-2">
                     <span className="font-mono font-bold w-7" style={{ color: 'var(--text-primary)' }}>
                       {base}
@@ -840,7 +870,6 @@ export function PokemonEditorFull({
                     </div>
                   </div>
 
-                  {/* Requirement 1: EV Box with + or - formatted string */}
                   <div className="col-span-2 sm:col-span-2 flex justify-center">
                     {editingEvStat === stat ? (
                       <input
@@ -873,7 +902,6 @@ export function PokemonEditorFull({
                     )}
                   </div>
 
-                  {/* EV Slider */}
                   <div className="col-span-3 sm:col-span-4 flex items-center px-1">
                     <input
                       type="range"
@@ -886,7 +914,6 @@ export function PokemonEditorFull({
                     />
                   </div>
 
-                  {/* IV Input */}
                   <div className="col-span-2 sm:col-span-1 flex justify-center">
                     <input
                       type="number"
@@ -903,7 +930,6 @@ export function PokemonEditorFull({
                     />
                   </div>
 
-                  {/* Total Calculated Stat */}
                   <div className="hidden sm:block sm:col-span-1 text-right font-mono font-bold text-sm text-indigo-400">
                     {calc}
                     {isPlus && <span className="text-emerald-400 text-xs">+</span>}

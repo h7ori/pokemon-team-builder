@@ -1,14 +1,17 @@
 'use client';
 
-import { Search, Sparkles, User, LogIn, LogOut, ShieldAlert } from 'lucide-react';
+import { Search, Sparkles } from 'lucide-react';
 import { useUIStore } from '@/stores/ui-store';
-import { useAuthStore } from '@/stores/auth-store';
 import { cn } from '@/lib/utils';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 export function Header() {
   const { sidebarCollapsed, setSearchOpen } = useUIStore();
-  const { user, isLoggedIn, logout, setShowAuthModal } = useAuthStore();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Ctrl+K to open search
   useEffect(() => {
@@ -22,8 +25,11 @@ export function Header() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [setSearchOpen]);
 
+  const activeMarginLeft = mounted && sidebarCollapsed ? '72px' : '256px';
+
   return (
     <header
+      suppressHydrationWarning
       className={cn(
         'sticky top-0 z-40 hidden lg:flex',
         'h-[68px] items-center justify-between px-6',
@@ -34,7 +40,7 @@ export function Header() {
         backdropFilter: `blur(var(--glass-blur))`,
         WebkitBackdropFilter: `blur(var(--glass-blur))`,
         borderColor: 'var(--border-primary)',
-        marginLeft: sidebarCollapsed ? '72px' : '256px',
+        marginLeft: activeMarginLeft,
       }}
     >
       <div className="flex items-center gap-4">
@@ -80,42 +86,6 @@ export function Header() {
           <Sparkles className="h-3.5 w-3.5 text-amber-400" />
           Gen 9
         </div>
-
-        {/* Account Profile / Guest Badge */}
-        {isLoggedIn && user ? (
-          <div className="flex items-center gap-2 rounded-xl border p-1 pr-3" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
-            <img
-              src={user.avatar || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'}
-              alt={user.name}
-              className="h-8 w-8 rounded-lg bg-indigo-950/60 p-0.5 object-contain border border-indigo-500/30"
-            />
-            <div className="flex flex-col text-left text-xs">
-              <span className="font-bold text-white leading-tight">{user.name}</span>
-              <span className="text-[10px] text-green-400 font-mono">Account Active</span>
-            </div>
-            <button
-              onClick={logout}
-              title="Sign Out"
-              className="ml-2 text-slate-400 hover:text-red-400 p-1 rounded transition-colors"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <span className="text-xs px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 flex items-center gap-1 font-mono">
-              <ShieldAlert className="h-3.5 w-3.5 text-amber-400" />
-              Guest Mode
-            </span>
-            <button
-              onClick={() => setShowAuthModal(true, 'Sign in to save teams to your account.')}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-md hover:bg-indigo-500 transition-all"
-            >
-              <LogIn className="h-4 w-4" />
-              Sign In
-            </button>
-          </div>
-        )}
       </div>
     </header>
   );

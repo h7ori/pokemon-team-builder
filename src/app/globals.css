@@ -302,3 +302,15 @@ input[type='range']::-moz-range-thumb {
 .animate-pulse-glow {
   animation: pulseGlow 2s ease-in-out infinite;
 }
+
+/* Hide Next.js dev indicator badge in bottom-left corner */
+nextjs-portal,
+[data-nextjs-toast],
+[data-nextjs-toast-wrapper],
+[data-next-badge-root],
+[data-nextjs-dialog-overlay] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

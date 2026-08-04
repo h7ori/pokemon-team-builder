@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   Swords,
   Calculator,
-  FolderOpen,
   ChevronLeft,
   ChevronRight,
   Sparkles,
@@ -15,24 +14,32 @@ import {
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/ui-store';
 import { ThemeToggle } from './ThemeToggle';
+import { useEffect, useState } from 'react';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/team-builder', label: 'Team Builder', icon: Swords },
   { href: '/calculator', label: 'Calculator', icon: Calculator },
-  { href: '/teams', label: 'My Teams', icon: FolderOpen },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const { sidebarCollapsed, setSidebarCollapsed } = useUIStore();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const isCollapsed = mounted ? sidebarCollapsed : false;
 
   return (
     <aside
+      suppressHydrationWarning
       className={cn(
         'fixed left-0 top-0 z-50 hidden h-screen flex-col lg:flex',
         'transition-all duration-300 ease-in-out',
-        sidebarCollapsed ? 'w-[72px]' : 'w-64'
+        isCollapsed ? 'w-[72px]' : 'w-64'
       )}
       style={{
         background: 'var(--bg-sidebar)',
@@ -52,106 +59,102 @@ export function Sidebar() {
           borderColor: 'var(--border-primary)',
           color: 'var(--text-secondary)',
         }}
-        aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
-        {sidebarCollapsed ? (
+        {isCollapsed ? (
           <ChevronRight className="h-3.5 w-3.5" />
         ) : (
           <ChevronLeft className="h-3.5 w-3.5" />
         )}
       </button>
 
-      {/* Logo */}
+      {/* Logo / Brand */}
       <div
-        className={cn(
-          'flex items-center border-b px-4',
-          sidebarCollapsed ? 'h-[68px] justify-center' : 'h-[68px] gap-3'
-        )}
-        style={{ borderColor: 'var(--bg-sidebar-hover)' }}
+        className="flex h-[68px] items-center gap-3 border-b px-5"
+        style={{ borderColor: 'var(--border-primary)' }}
       >
-        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg">
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md">
           <Sparkles className="h-5 w-5 text-white" />
         </div>
-        <AnimatePresence>
-          {!sidebarCollapsed && (
-            <motion.div
-              initial={{ opacity: 0, width: 0 }}
-              animate={{ opacity: 1, width: 'auto' }}
-              exit={{ opacity: 0, width: 0 }}
-              className="overflow-hidden"
+        {!isCollapsed && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex flex-col"
+          >
+            <span
+              className="text-base font-bold tracking-tight"
+              style={{ color: 'var(--text-primary)' }}
             >
-              <h1 className="whitespace-nowrap text-lg font-bold text-white">
-                PokéBuilder
-              </h1>
-              <p className="text-xs text-slate-400">Team Builder Pro</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              PokéBuilder
+            </span>
+            <span
+              className="text-[10px] font-medium"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              Team Builder Pro
+            </span>
+          </motion.div>
+        )}
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-3">
-        <ul className="space-y-1">
-          {NAV_ITEMS.map((item) => {
-            const isActive = pathname === item.href;
-            const Icon = item.icon;
+      {/* Nav Links */}
+      <nav className="flex-1 space-y-1 px-3 py-4">
+        {NAV_ITEMS.map((item) => {
+          const isActive = pathname === item.href;
+          const Icon = item.icon;
 
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  className={cn(
-                    'flex items-center gap-3 rounded-xl px-3 py-2.5',
-                    'transition-all duration-200',
-                    'focus-ring',
-                    isActive
-                      ? 'text-white shadow-md'
-                      : 'text-slate-400 hover:text-white',
-                    sidebarCollapsed && 'justify-center px-0'
-                  )}
-                  style={{
-                    background: isActive
-                      ? 'var(--bg-sidebar-active)'
-                      : 'transparent',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isActive)
-                      (e.currentTarget as HTMLElement).style.background =
-                        'var(--bg-sidebar-hover)';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive)
-                      (e.currentTarget as HTMLElement).style.background =
-                        'transparent';
-                  }}
-                  title={sidebarCollapsed ? item.label : undefined}
-                >
-                  <Icon className="h-5 w-5 flex-shrink-0" />
-                  <AnimatePresence>
-                    {!sidebarCollapsed && (
-                      <motion.span
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="text-sm font-medium"
-                      >
-                        {item.label}
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                'group relative flex items-center gap-3 rounded-xl px-3 py-2.5',
+                'text-sm font-medium transition-all duration-200',
+                isActive
+                  ? 'bg-gradient-to-r from-indigo-500/15 to-purple-500/10 text-indigo-400 font-semibold'
+                  : 'hover:bg-white/5'
+              )}
+              style={{
+                color: isActive ? 'var(--color-primary)' : 'var(--text-secondary)',
+              }}
+            >
+              <Icon
+                className={cn(
+                  'h-5 w-5 flex-shrink-0 transition-colors',
+                  isActive ? 'text-indigo-400' : 'group-hover:text-white'
+                )}
+              />
+              {!isCollapsed && (
+                <span className="truncate">{item.label}</span>
+              )}
+
+              {/* Active Indicator */}
+              {isActive && (
+                <motion.div
+                  layoutId="sidebar-active"
+                  className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-indigo-500"
+                />
+              )}
+            </Link>
+          );
+        })}
       </nav>
 
-      {/* Bottom section */}
+      {/* Footer controls */}
       <div
-        className="border-t p-3"
-        style={{ borderColor: 'var(--bg-sidebar-hover)' }}
+        className="flex items-center justify-between border-t p-4"
+        style={{ borderColor: 'var(--border-primary)' }}
       >
-        <ThemeToggle collapsed={sidebarCollapsed} />
+        {!isCollapsed && (
+          <span
+            className="text-xs font-medium"
+            style={{ color: 'var(--text-tertiary)' }}
+          >
+            Theme
+          </span>
+        )}
+        <ThemeToggle />
       </div>
     </aside>
   );

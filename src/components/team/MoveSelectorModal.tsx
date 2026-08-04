@@ -2,11 +2,10 @@
 
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Zap } from 'lucide-react';
+import { Search, AlertTriangle } from 'lucide-react';
 import { getAllMoves, getMove, type FormattedMove } from '@/lib/pokemon/data-provider';
 import { TypeBadge } from '@/components/shared/TypeBadge';
 import Fuse from 'fuse.js';
-import type { PokemonType } from '@/types/pokemon';
 
 interface MoveSelectorModalProps {
   isOpen: boolean;
@@ -22,6 +21,7 @@ export function MoveSelectorModal({
   currentMoveSlot = 0,
 }: MoveSelectorModalProps) {
   const [query, setQuery] = useState('');
+  const [showIllegalMoves, setShowIllegalMoves] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<'All' | 'Physical' | 'Special' | 'Status' | 'GMax' | 'ZMove' | 'Shadow'>('All');
 
   const movesList = useMemo(() => getAllMoves(9), []);
@@ -38,6 +38,10 @@ export function MoveSelectorModal({
   const filteredMoves = useMemo(() => {
     let result = query.trim() ? fuse.search(query, { limit: 120 }).map((r) => r.item) : movesList;
 
+    if (!showIllegalMoves && !query.trim()) {
+      result = result.filter((m) => !m.isIllegal);
+    }
+
     if (categoryFilter === 'Physical') {
       result = result.filter((m) => m.category === 'Physical');
     } else if (categoryFilter === 'Special') {
@@ -53,7 +57,7 @@ export function MoveSelectorModal({
     }
 
     return result.slice(0, 150);
-  }, [query, fuse, movesList, categoryFilter]);
+  }, [query, fuse, movesList, categoryFilter, showIllegalMoves]);
 
   if (!isOpen) return null;
 
@@ -93,16 +97,28 @@ export function MoveSelectorModal({
             </button>
           </div>
 
-          {/* Search Bar */}
-          <div className="flex items-center gap-3 border rounded-xl px-3 py-2" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
-            <Search className="h-4 w-4 text-slate-400" />
-            <input
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search moves (e.g. G-Max Wildfire, 10,000,000 Volt Thunderbolt, Earthquake)..."
-              className="flex-1 bg-transparent text-sm outline-none text-white"
-            />
+          {/* Search Bar & Illegal Toggle */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-3 border rounded-xl px-3 py-2 flex-1 min-w-[240px]" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+              <Search className="h-4 w-4 text-slate-400" />
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search moves..."
+                className="flex-1 bg-transparent text-sm outline-none text-white"
+              />
+            </div>
+
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-300 bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl">
+              <input
+                type="checkbox"
+                checked={showIllegalMoves}
+                onChange={(e) => setShowIllegalMoves(e.target.checked)}
+                className="accent-indigo-500"
+              />
+              Show Illegal Moves
+            </label>
           </div>
 
           {/* Category & Special Moves Filters */}
@@ -147,10 +163,12 @@ export function MoveSelectorModal({
                     onSelectMove(move.name);
                     onClose();
                   }}
-                  className="w-full card card-interactive p-3 flex items-center justify-between text-left transition-all hover:border-indigo-500"
+                  className={`w-full card card-interactive p-3 flex items-center justify-between text-left transition-all hover:border-indigo-500 ${
+                    move.isIllegal ? 'border-amber-500/40 bg-amber-950/10' : ''
+                  }`}
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-sm text-white">
                         {move.name}
                       </span>
@@ -172,6 +190,12 @@ export function MoveSelectorModal({
                       {move.isZ && (
                         <span className="text-[10px] px-1.5 py-0.2 rounded font-mono bg-amber-900/60 text-amber-300 font-bold border border-amber-500/30">
                           Z-Move
+                        </span>
+                      )}
+                      {move.isIllegal && (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded font-mono bg-rose-950 text-rose-400 font-bold border border-rose-500/40">
+                          <AlertTriangle className="h-3 w-3 text-rose-400" />
+                          ILLEGAL
                         </span>
                       )}
                     </div>

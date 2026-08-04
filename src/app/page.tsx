@@ -14,10 +14,8 @@ import {
   ArrowRight,
   Plus,
   BarChart3,
-  UserCheck,
 } from 'lucide-react';
 import { useTeamStore } from '@/stores/team-store';
-import { useAuthStore } from '@/stores/auth-store';
 import { PokemonSprite } from '@/components/shared/PokemonSprite';
 import { TypeBadge } from '@/components/shared/TypeBadge';
 import type { PokemonType } from '@/types/pokemon';
@@ -41,9 +39,9 @@ const FEATURES = [
     color: '#10B981',
   },
   {
-    href: '/teams',
+    href: '/team-builder',
     icon: FolderOpen,
-    title: 'My Teams',
+    title: 'Teams Library',
     description: 'Save, organize, and manage unlimited teams with import/export support.',
     gradient: 'from-amber-500 to-orange-600',
     color: '#F59E0B',
@@ -65,7 +63,6 @@ const itemVariants = {
 
 export default function DashboardPage() {
   const { teams, createTeam, setActiveTeam } = useTeamStore();
-  const { user, isLoggedIn, setShowAuthModal } = useAuthStore();
 
   const recentTeams = teams
     .filter((t) => !t.isArchived)
@@ -98,10 +95,6 @@ export default function DashboardPage() {
   }, [teams]);
 
   const handleNewTeam = () => {
-    if (!isLoggedIn) {
-      setShowAuthModal(true, 'Sign in or create an account to save new teams!');
-      return;
-    }
     const id = createTeam();
     setActiveTeam(id);
   };
@@ -122,17 +115,6 @@ export default function DashboardPage() {
 
         <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
           <div className="space-y-3">
-            {isLoggedIn && user ? (
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-xs font-semibold text-indigo-200 border border-white/20">
-                <UserCheck className="h-3.5 w-3.5 text-emerald-400" />
-                Welcome back, {user.name}!
-              </div>
-            ) : (
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 text-xs font-semibold text-amber-300 border border-amber-500/30">
-                Guest Mode — Sign in to save teams to your account
-              </div>
-            )}
-
             <h1 className="text-3xl lg:text-4xl font-bold text-white">
               Pokémon Team Builder
             </h1>
@@ -142,13 +124,14 @@ export default function DashboardPage() {
             </p>
 
             <div className="flex flex-wrap gap-3 pt-2">
-              <button
+              <Link
+                href="/team-builder"
                 onClick={handleNewTeam}
                 className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-lg transition-all hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
               >
                 <Plus className="h-4 w-4" />
                 New Team
-              </button>
+              </Link>
               <Link
                 href="/calculator"
                 className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/20"
@@ -203,10 +186,10 @@ export default function DashboardPage() {
         variants={itemVariants}
         className="grid grid-cols-1 md:grid-cols-3 gap-4"
       >
-        {FEATURES.map((feature) => {
+        {FEATURES.map((feature, idx) => {
           const Icon = feature.icon;
           return (
-            <Link key={feature.href} href={feature.href}>
+            <Link key={idx} href={feature.href}>
               <motion.div
                 className="card card-interactive p-6 h-full"
                 whileHover={{ y: -2 }}
@@ -278,7 +261,7 @@ export default function DashboardPage() {
         })}
       </motion.div>
 
-      {/* Requirement 1: Most Used Pokémon by You */}
+      {/* Most Used Pokémon by You */}
       <motion.div variants={itemVariants} className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -334,13 +317,14 @@ export default function DashboardPage() {
             <p className="text-xs text-slate-400 max-w-md mx-auto">
               No Pokémon in your team library yet! Build your first team in the Team Builder to track your most used Pokémon statistics.
             </p>
-            <button
+            <Link
+              href="/team-builder"
               onClick={handleNewTeam}
               className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow hover:bg-indigo-500 transition-all"
             >
               <Plus className="h-3.5 w-3.5" />
               Build Your First Team
-            </button>
+            </Link>
           </div>
         )}
       </motion.div>
@@ -356,7 +340,7 @@ export default function DashboardPage() {
               Recent Teams
             </h2>
             <Link
-              href="/teams"
+              href="/team-builder"
               className="text-sm font-medium flex items-center gap-1"
               style={{ color: 'var(--color-primary)' }}
             >

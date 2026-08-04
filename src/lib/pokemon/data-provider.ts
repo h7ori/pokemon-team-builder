@@ -9,7 +9,7 @@ const gen9 = new Generations(Dex).get(9);
 
 export interface FormattedSpecies {
   id: string;
-  name: string; // e.g. "Charizard-Mega-X", "Lapras-Gmax", "Steelix-Mega"
+  name: string;
   num: number;
   baseSpecies: string;
   forme: string;
@@ -30,9 +30,6 @@ export interface FormattedSpecies {
   isRegional: boolean;
 }
 
-/**
- * Returns ALL species and alternate forms (Megas, Gmax, Regional forms, Forme shifts) from Gen 1-9
- */
 export function getAllSpecies(gen: number = 9): FormattedSpecies[] {
   const speciesList: FormattedSpecies[] = [];
 
@@ -94,9 +91,6 @@ export function getSpecies(name: string, gen: number = 9) {
   return spec;
 }
 
-/**
- * Gets all available forms for a base species (e.g. Steelix -> Steelix, Steelix-Mega)
- */
 export function getSpeciesForms(baseSpeciesName: string, gen: number = 9): FormattedSpecies[] {
   const all = getAllSpecies(gen);
   const base = getSpecies(baseSpeciesName, gen);
@@ -122,10 +116,12 @@ export interface FormattedMove {
   isMax?: boolean | string;
   isGmax?: boolean;
   isShadow?: boolean;
+  isIllegal?: boolean;
 }
 
 export function getAllMoves(gen: number = 9): FormattedMove[] {
   const moves: FormattedMove[] = [];
+  const seenIds = new Set<string>();
 
   for (const m of Dex.moves.all()) {
     if (m.exists && m.isNonstandard !== 'Custom') {
@@ -134,8 +130,14 @@ export function getAllMoves(gen: number = 9): FormattedMove[] {
       const isGmax = m.name.startsWith('G-Max') || (typeof m.isMax === 'string' && m.isMax !== 'true');
       const isShadow = m.name.startsWith('Shadow ');
 
+      let moveId: string = m.id;
+      if (seenIds.has(moveId)) {
+        moveId = `${m.id}-${m.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+      }
+      seenIds.add(moveId);
+
       moves.push({
-        id: m.id,
+        id: moveId,
         name: m.name,
         type: m.type as PokemonType,
         category: m.category as 'Physical' | 'Special' | 'Status',
@@ -149,6 +151,7 @@ export function getAllMoves(gen: number = 9): FormattedMove[] {
         isMax,
         isGmax,
         isShadow,
+        isIllegal: false,
       });
     }
   }
@@ -179,11 +182,12 @@ export function getMove(name: string, gen: number = 9): FormattedMove | null {
     isMax,
     isGmax,
     isShadow,
+    isIllegal: false,
   };
 }
 
 /**
- * Get learnable moves for a species (including G-Max, Z-Moves, and special moves)
+ * Get learnable moves for a species with accurate isIllegal flag tagging
  */
 export async function getLearnableMoves(speciesName: string): Promise<FormattedMove[]> {
   const spec = getSpecies(speciesName);
@@ -192,23 +196,37 @@ export async function getLearnableMoves(speciesName: string): Promise<FormattedM
   const all = getAllMoves(9);
 
   if (!learnsetData || !learnsetData.learnset) {
-    return all;
+    return all.map((m) => ({ ...m, isIllegal: false }));
   }
 
   const learnableMoveIds = new Set(Object.keys(learnsetData.learnset));
-
-  // If species is a Gmax form or Mega form, include G-Max & Max moves
   const isGmaxSpec = speciesName.includes('Gmax') || spec?.forme === 'Gmax';
 
-  const learnable = all.filter(
-    (m) => learnableMoveIds.has(m.id) || (isGmaxSpec && m.isGmax)
-  );
+  // Always legal universal moves
+  const universalMoves = new Set(['terablast', 'struggle', 'hiddenpower', 'frustration', 'return', 'facade']);
 
-  const nonLearnable = all.filter(
-    (m) => !learnableMoveIds.has(m.id) && !(isGmaxSpec && m.isGmax)
-  );
+  const taggedMoves = all.map((m) => {
+    // Check base move ID without suffix for variant moves
+    const baseId = m.id.split('-')[0];
+    const isLegal =
+      learnableMoveIds.has(m.id) ||
+      learnableMoveIds.has(baseId) ||
+      universalMoves.has(baseId) ||
+      (isGmaxSpec && m.isGmax);
 
-  return [...learnable, ...nonLearnable];
+    return {
+      ...m,
+      isIllegal: !isLegal,
+    };
+  });
+
+  // Sort legal moves first, then alphabetical
+  return taggedMoves.sort((a, b) => {
+    if (a.isIllegal !== b.isIllegal) {
+      return a.isIllegal ? 1 : -1;
+    }
+    return a.name.localeCompare(b.name);
+  });
 }
 
 export function getAllAbilities(gen: number = 9) {
@@ -280,7 +298,6 @@ export function getAllNatures(): NatureData[] {
   return natures.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// Calculate a stat value given the parameters
 export function calculateStat(
   stat: StatName,
   base: number,
@@ -290,7 +307,6 @@ export function calculateStat(
   nature: NatureData
 ): number {
   if (stat === 'hp') {
-    // Shedinja special case
     if (base === 1) return 1;
     return Math.floor(((2 * base + iv + Math.floor(ev / 4)) * level) / 100) + level + 10;
   }
@@ -306,7 +322,6 @@ export function calculateStat(
   return value;
 }
 
-// Get all types
 export function getAllTypes(): PokemonType[] {
   return [
     'Normal', 'Fire', 'Water', 'Electric', 'Grass', 'Ice',
@@ -315,7 +330,6 @@ export function getAllTypes(): PokemonType[] {
   ];
 }
 
-// Pokémon generations
 export const GENERATIONS = [
   { num: 1, name: 'Gen 1', label: 'RBY', region: 'Kanto' },
   { num: 2, name: 'Gen 2', label: 'GSC', region: 'Johto' },

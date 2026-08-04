@@ -4,14 +4,14 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import { MobileNav } from '@/components/layout/MobileNav';
 import { SearchModal } from '@/components/shared/SearchModal';
-import { AuthModal } from '@/components/auth/AuthModal';
 import { useUIStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const { sidebarCollapsed } = useUIStore();
+  const [mounted, setMounted] = useState(false);
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -24,6 +24,12 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       })
   );
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const activeWidth = mounted && sidebarCollapsed ? '72px' : '256px';
+
   return (
     <QueryClientProvider client={queryClient}>
       {/* Desktop sidebar */}
@@ -35,11 +41,9 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       {/* Global search modal */}
       <SearchModal />
 
-      {/* Account Auth modal */}
-      <AuthModal />
-
       {/* Main content area */}
       <div
+        suppressHydrationWarning
         className={cn(
           'min-h-screen transition-all duration-300',
           'pt-14 pb-20 lg:pt-0 lg:pb-0'
@@ -48,10 +52,10 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
           marginLeft: `var(--sidebar-width, 0px)`,
         }}
       >
-        <style>{`
+        <style suppressHydrationWarning>{`
           @media (min-width: 1024px) {
             :root {
-              --sidebar-width: ${sidebarCollapsed ? '72px' : '256px'};
+              --sidebar-width: ${activeWidth};
             }
           }
           @media (max-width: 1023px) {
@@ -61,7 +65,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
           }
         `}</style>
 
-        {/* Desktop header with account profile badge */}
+        {/* Desktop header */}
         <Header />
 
         <main className="p-4 lg:p-6">{children}</main>

@@ -6,17 +6,14 @@ import {
   LayoutDashboard,
   Swords,
   Calculator,
-  FolderOpen,
-  Menu,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Sparkles } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Home', icon: LayoutDashboard },
   { href: '/team-builder', label: 'Builder', icon: Swords },
   { href: '/calculator', label: 'Calc', icon: Calculator },
-  { href: '/teams', label: 'Teams', icon: FolderOpen },
 ];
 
 export function MobileNav() {

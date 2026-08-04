@@ -1312,26 +1312,26 @@ export default function CalculatorPage() {
 
       {/* Datalists */}
       <datalist id="species-calc-list">
-        {speciesList.slice(0, 500).map((s) => (
-          <option key={s.name} value={s.name} />
+        {speciesList.map((s, idx) => (
+          <option key={`${s.id}-${s.name}-${idx}`} value={s.name} />
         ))}
       </datalist>
 
       <datalist id="items-calc-list">
-        {itemsList.slice(0, 300).map((i) => (
-          <option key={i.id} value={i.name} />
+        {itemsList.slice(0, 300).map((i, idx) => (
+          <option key={`${i.id}-${i.name}-${idx}`} value={i.name} />
         ))}
       </datalist>
 
       <datalist id="abilities-calc-list">
-        {abilitiesList.slice(0, 300).map((a) => (
-          <option key={a.id} value={a.name} />
+        {abilitiesList.slice(0, 300).map((a, idx) => (
+          <option key={`${a.id}-${a.name}-${idx}`} value={a.name} />
         ))}
       </datalist>
 
       <datalist id="moves-calc-list">
-        {getAllMoves(selectedGen).slice(0, 500).map((m) => (
-          <option key={m.id} value={m.name} />
+        {getAllMoves(selectedGen).slice(0, 500).map((m, idx) => (
+          <option key={`${m.id}-${m.name}-${idx}`} value={m.name} />
         ))}
       </datalist>
 
