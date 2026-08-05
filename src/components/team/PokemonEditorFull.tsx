@@ -13,6 +13,7 @@ import {
   Shield,
   Sparkles,
   AlertTriangle,
+  X,
 } from 'lucide-react';
 import type { TeamPokemon, StatName, PokemonType, Gender, BaseStats } from '@/types/pokemon';
 import {
@@ -100,6 +101,13 @@ export function PokemonEditorFull({
   const [pokemonSearchQuery, setPokemonSearchQuery] = useState('');
   const [pokemonTypeFilter, setPokemonTypeFilter] = useState<PokemonType | 'All'>('All');
   const [pokemonGenFilter, setPokemonGenFilter] = useState<number | 'All'>('All');
+  const [pokemonAbilityFilter, setPokemonAbilityFilter] = useState<string>('');
+  const [pokemonSortKey, setPokemonSortKey] = useState<'num' | 'name' | 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe' | 'bst'>('num');
+  const [pokemonSortDir, setPokemonSortDir] = useState<'asc' | 'desc'>('asc');
+  const [pickerColumnPanel, setPickerColumnPanel] = useState<'none' | 'types' | 'abilities' | 'stats' | 'gen'>('none');
+  const [statFilters, setStatFilters] = useState<Record<string, number>>({
+    hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0, bst: 0,
+  });
 
   // EV Mode: 'standard' (510 EVs, max 252) vs 'champions' (66 EV Points, max 32)
   const [evMode, setEvMode] = useState<'standard' | 'champions'>('standard');
@@ -386,8 +394,8 @@ export function PokemonEditorFull({
 
   const filteredPokemon = useMemo(() => {
     let result = pokemonSearchQuery.trim()
-      ? pokemonFuse.search(pokemonSearchQuery, { limit: 200 }).map((r) => r.item)
-      : allSpeciesList;
+      ? pokemonFuse.search(pokemonSearchQuery, { limit: 500 }).map((r) => r.item)
+      : [...allSpeciesList];
 
     if (pokemonTypeFilter !== 'All') {
       result = result.filter((s) => s.types.includes(pokemonTypeFilter));
@@ -397,8 +405,44 @@ export function PokemonEditorFull({
       result = result.filter((s) => s.generation === pokemonGenFilter);
     }
 
-    return result.slice(0, 200);
-  }, [allSpeciesList, pokemonFuse, pokemonSearchQuery, pokemonTypeFilter, pokemonGenFilter]);
+    if (pokemonAbilityFilter) {
+      const ab = pokemonAbilityFilter.toLowerCase();
+      result = result.filter((s) =>
+        s.abilities.some((a) => a.toLowerCase() === ab) ||
+        (s.hiddenAbility && s.hiddenAbility.toLowerCase() === ab)
+      );
+    }
+
+    // Apply min-stat filters
+    for (const [stat, minVal] of Object.entries(statFilters)) {
+      if (minVal > 0) {
+        if (stat === 'bst') {
+          result = result.filter((s) => s.bst >= minVal);
+        } else {
+          result = result.filter((s) => s.baseStats[stat as StatName] >= minVal);
+        }
+      }
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      let aVal: number | string, bVal: number | string;
+      if (pokemonSortKey === 'name') {
+        aVal = a.name; bVal = b.name;
+        return pokemonSortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      } else if (pokemonSortKey === 'bst') {
+        aVal = a.bst; bVal = b.bst;
+      } else if (pokemonSortKey === 'num') {
+        aVal = a.num; bVal = b.num;
+      } else {
+        aVal = a.baseStats[pokemonSortKey as StatName];
+        bVal = b.baseStats[pokemonSortKey as StatName];
+      }
+      return pokemonSortDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
+    });
+
+    return result.slice(0, 400);
+  }, [allSpeciesList, pokemonFuse, pokemonSearchQuery, pokemonTypeFilter, pokemonGenFilter, pokemonAbilityFilter, statFilters, pokemonSortKey, pokemonSortDir]);
 
   // Filtered Items
   const popularItemsData = useMemo(() => {
@@ -1305,7 +1349,7 @@ export function PokemonEditorFull({
         />
       )}
 
-      {/* Pokémon Picker Modal */}
+      {/* Pokémon Picker Modal — Showdown Table Style */}
       <AnimatePresence>
         {pokemonPickerOpen && (
           <>
@@ -1314,155 +1358,348 @@ export function PokemonEditorFull({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 z-[130] bg-black/60 backdrop-blur-sm"
-              onClick={() => setPokemonPickerOpen(false)}
+              onClick={() => { setPokemonPickerOpen(false); setPickerColumnPanel('none'); }}
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: -20 }}
+              initial={{ opacity: 0, scale: 0.97, y: -16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: -20 }}
-              transition={{ duration: 0.2 }}
-              className="fixed left-1/2 top-[5%] z-[131] w-[95%] max-w-3xl -translate-x-1/2 rounded-2xl border flex flex-col"
+              exit={{ opacity: 0, scale: 0.97, y: -16 }}
+              transition={{ duration: 0.18 }}
+              className="fixed left-1/2 top-[3%] z-[131] w-[98%] max-w-4xl -translate-x-1/2 rounded-2xl border flex flex-col"
               style={{
                 background: 'var(--bg-card)',
                 borderColor: 'var(--border-primary)',
-                boxShadow: 'var(--shadow-xl)',
-                maxHeight: '88vh',
+                boxShadow: '0 25px 80px rgba(0,0,0,0.7)',
+                maxHeight: '93vh',
               }}
             >
-              {/* Header */}
-              <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border-primary)' }}>
-                <h3 className="font-bold text-base text-white">Choose Pokémon</h3>
+              {/* ── Top Search Row ── */}
+              <div className="flex items-center gap-3 px-4 pt-4 pb-3 border-b" style={{ borderColor: 'var(--border-primary)' }}>
+                <Search className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                <input
+                  autoFocus
+                  value={pokemonSearchQuery}
+                  onChange={(e) => { setPokemonSearchQuery(e.target.value); setPickerColumnPanel('none'); }}
+                  onKeyDown={(e) => { if (e.key === 'Escape') setPokemonPickerOpen(false); }}
+                  placeholder="Search Pokémon or form..."
+                  className="flex-1 bg-transparent text-sm outline-none"
+                  style={{ color: 'var(--text-primary)' }}
+                />
+                <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                  {filteredPokemon.length} results
+                </span>
                 <button
-                  onClick={() => setPokemonPickerOpen(false)}
-                  className="text-xs px-2.5 py-1 rounded-lg"
+                  onClick={() => { setPokemonPickerOpen(false); setPickerColumnPanel('none'); }}
+                  className="text-xs px-2.5 py-1 rounded-lg ml-1"
                   style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
                 >
                   ESC
                 </button>
               </div>
 
-              {/* Filters */}
-              <div className="p-4 space-y-3 border-b" style={{ borderColor: 'var(--border-primary)' }}>
-                {/* Search */}
-                <div className="flex items-center gap-3 border rounded-xl px-3 py-2" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
-                  <Search className="h-4 w-4 text-slate-400 flex-shrink-0" />
-                  <input
-                    autoFocus
-                    value={pokemonSearchQuery}
-                    onChange={(e) => setPokemonSearchQuery(e.target.value)}
-                    placeholder="Search Pokémon or form (e.g. Charizard, Charizard-Gmax)..."
-                    className="flex-1 bg-transparent text-sm outline-none text-white"
-                  />
-                </div>
-
-                {/* Generation Filter */}
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] font-bold uppercase text-slate-500 mr-1">Gen:</span>
-                  <button
-                    onClick={() => setPokemonGenFilter('All')}
-                    className="px-2.5 py-1 rounded-lg transition-colors font-medium text-[10px] border"
-                    style={{
-                      background: pokemonGenFilter === 'All' ? 'var(--color-primary)' : 'var(--bg-secondary)',
-                      color: pokemonGenFilter === 'All' ? '#fff' : 'var(--text-secondary)',
-                      borderColor: pokemonGenFilter === 'All' ? 'transparent' : 'var(--border-primary)',
-                    }}
-                  >
-                    All
-                  </button>
-                  {GENERATIONS.map((gen) => (
-                    <button
-                      key={gen.num}
-                      onClick={() => setPokemonGenFilter(pokemonGenFilter === gen.num ? 'All' : gen.num)}
-                      className="px-2.5 py-1 rounded-lg transition-all font-medium text-[10px] border"
-                      style={{
-                        background: pokemonGenFilter === gen.num ? 'var(--color-primary)' : 'var(--bg-secondary)',
-                        color: pokemonGenFilter === gen.num ? '#fff' : 'var(--text-secondary)',
-                        borderColor: pokemonGenFilter === gen.num ? 'transparent' : 'var(--border-primary)',
-                      }}
+              {/* ── Active Filter Tags ── */}
+              {(pokemonTypeFilter !== 'All' || pokemonGenFilter !== 'All' || pokemonAbilityFilter || Object.values(statFilters).some(v => v > 0)) && (
+                <div className="flex items-center gap-2 flex-wrap px-4 py-2 border-b" style={{ borderColor: 'var(--border-primary)' }}>
+                  <span className="text-[11px] font-semibold" style={{ color: 'var(--text-tertiary)' }}>Filters:</span>
+                  {pokemonTypeFilter !== 'All' && (
+                    <span
+                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border cursor-pointer hover:opacity-80"
+                      style={{ borderColor: TYPE_COLORS[pokemonTypeFilter]?.bg || 'var(--border-primary)', color: TYPE_COLORS[pokemonTypeFilter]?.text || '#fff', background: (TYPE_COLORS[pokemonTypeFilter]?.bg || 'var(--bg-secondary)') + '33' }}
+                      onClick={() => setPokemonTypeFilter('All')}
                     >
-                      {gen.name}
-                      <span className="ml-1 opacity-60">({gen.region})</span>
-                    </button>
+                      {pokemonTypeFilter} <X className="h-3 w-3" />
+                    </span>
+                  )}
+                  {pokemonGenFilter !== 'All' && (
+                    <span
+                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border cursor-pointer hover:opacity-80"
+                      style={{ borderColor: 'var(--border-secondary)', color: 'var(--text-primary)', background: 'var(--bg-secondary)' }}
+                      onClick={() => setPokemonGenFilter('All')}
+                    >
+                      {GENERATIONS.find(g => g.num === pokemonGenFilter)?.name} <X className="h-3 w-3" />
+                    </span>
+                  )}
+                  {pokemonAbilityFilter && (
+                    <span
+                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border cursor-pointer hover:opacity-80"
+                      style={{ borderColor: 'var(--border-secondary)', color: 'var(--text-primary)', background: 'var(--bg-secondary)' }}
+                      onClick={() => setPokemonAbilityFilter('')}
+                    >
+                      {pokemonAbilityFilter} <X className="h-3 w-3" />
+                    </span>
+                  )}
+                  {Object.entries(statFilters).filter(([, v]) => v > 0).map(([stat, val]) => (
+                    <span
+                      key={stat}
+                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border cursor-pointer hover:opacity-80"
+                      style={{ borderColor: 'var(--border-secondary)', color: STAT_COLORS[stat as StatName] || '#fff', background: 'var(--bg-secondary)' }}
+                      onClick={() => setStatFilters(prev => ({ ...prev, [stat]: 0 }))}
+                    >
+                      {stat.toUpperCase()} ≥{val} <X className="h-3 w-3" />
+                    </span>
                   ))}
-                </div>
-
-                {/* Type Filter */}
-                <div className="flex items-center gap-1 flex-wrap">
-                  <span className="text-[10px] font-bold uppercase text-slate-500 mr-1">Type:</span>
                   <button
-                    onClick={() => setPokemonTypeFilter('All')}
-                    className="px-2.5 py-1 rounded-lg transition-colors font-medium text-[10px] border"
-                    style={{
-                      background: pokemonTypeFilter === 'All' ? 'var(--color-primary)' : 'var(--bg-secondary)',
-                      color: pokemonTypeFilter === 'All' ? '#fff' : 'var(--text-secondary)',
-                      borderColor: pokemonTypeFilter === 'All' ? 'transparent' : 'var(--border-primary)',
-                    }}
+                    onClick={() => { setPokemonTypeFilter('All'); setPokemonGenFilter('All'); setPokemonAbilityFilter(''); setStatFilters({ hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0, bst: 0 }); }}
+                    className="text-[10px] px-2 py-0.5 rounded-md border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 transition-colors"
                   >
-                    All
+                    Clear All
                   </button>
-                  {POKEMON_TYPES.map((type) => {
-                    const colors = TYPE_COLORS[type] ?? TYPE_COLORS['Normal'];
-                    const isActive = pokemonTypeFilter === type;
-                    return (
-                      <button
-                        key={type}
-                        onClick={() => setPokemonTypeFilter(pokemonTypeFilter === type ? 'All' : type)}
-                        className="px-2.5 py-1 rounded-lg transition-all font-semibold uppercase tracking-wide text-[10px] border"
-                        style={{
-                          background: isActive ? colors.bg : 'var(--bg-secondary)',
-                          color: isActive ? colors.text : 'var(--text-tertiary)',
-                          borderColor: isActive ? colors.bg : 'var(--border-primary)',
-                          opacity: isActive ? 1 : 0.7,
-                        }}
-                      >
-                        {type}
-                      </button>
-                    );
-                  })}
                 </div>
+              )}
 
-                {/* Result count */}
-                <div className="text-[11px] text-slate-500">
-                  Showing <span className="text-slate-300 font-semibold">{filteredPokemon.length}</span> Pokémon
-                  {pokemonTypeFilter !== 'All' && <span> · Type: <span className="text-white">{pokemonTypeFilter}</span></span>}
-                  {pokemonGenFilter !== 'All' && <span> · {GENERATIONS.find(g => g.num === pokemonGenFilter)?.name}</span>}
-                </div>
+              {/* ── Column Filter Panel (slides in below header) ── */}
+              <AnimatePresence>
+                {pickerColumnPanel !== 'none' && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="border-b overflow-hidden"
+                    style={{ borderColor: 'var(--border-primary)' }}
+                  >
+                    <div className="p-3" style={{ background: 'var(--bg-secondary)' }}>
+                      {/* TYPE panel */}
+                      {pickerColumnPanel === 'types' && (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className="text-[10px] font-bold uppercase text-slate-500 mr-1">Filter by Type:</span>
+                          <button
+                            onClick={() => { setPokemonTypeFilter('All'); setPickerColumnPanel('none'); }}
+                            className="px-2.5 py-1 rounded-lg font-medium text-[10px] border transition-colors"
+                            style={{ background: pokemonTypeFilter === 'All' ? 'var(--color-primary)' : 'var(--bg-card)', color: pokemonTypeFilter === 'All' ? '#fff' : 'var(--text-secondary)', borderColor: pokemonTypeFilter === 'All' ? 'transparent' : 'var(--border-primary)' }}
+                          >
+                            All
+                          </button>
+                          {POKEMON_TYPES.map((type) => {
+                            const colors = TYPE_COLORS[type] ?? TYPE_COLORS['Normal'];
+                            const isActive = pokemonTypeFilter === type;
+                            return (
+                              <button
+                                key={type}
+                                onClick={() => { setPokemonTypeFilter(isActive ? 'All' : type); setPickerColumnPanel('none'); }}
+                                className="px-2.5 py-1 rounded-lg transition-all font-semibold uppercase tracking-wide text-[10px] border"
+                                style={{ background: isActive ? colors.bg : 'var(--bg-card)', color: isActive ? colors.text : 'var(--text-tertiary)', borderColor: isActive ? colors.bg : 'var(--border-primary)', opacity: isActive ? 1 : 0.75 }}
+                              >
+                                {type}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* GENERATION panel */}
+                      {pickerColumnPanel === 'gen' && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-bold uppercase text-slate-500 mr-1">Filter by Generation:</span>
+                          <button
+                            onClick={() => { setPokemonGenFilter('All'); setPickerColumnPanel('none'); }}
+                            className="px-2.5 py-1 rounded-lg font-medium text-[10px] border transition-colors"
+                            style={{ background: pokemonGenFilter === 'All' ? 'var(--color-primary)' : 'var(--bg-card)', color: pokemonGenFilter === 'All' ? '#fff' : 'var(--text-secondary)', borderColor: pokemonGenFilter === 'All' ? 'transparent' : 'var(--border-primary)' }}
+                          >
+                            All
+                          </button>
+                          {GENERATIONS.map((gen) => (
+                            <button
+                              key={gen.num}
+                              onClick={() => { setPokemonGenFilter(pokemonGenFilter === gen.num ? 'All' : gen.num); setPickerColumnPanel('none'); }}
+                              className="px-2.5 py-1 rounded-lg font-medium text-[10px] border transition-colors"
+                              style={{ background: pokemonGenFilter === gen.num ? 'var(--color-primary)' : 'var(--bg-card)', color: pokemonGenFilter === gen.num ? '#fff' : 'var(--text-secondary)', borderColor: pokemonGenFilter === gen.num ? 'transparent' : 'var(--border-primary)' }}
+                            >
+                              {gen.name} <span className="opacity-60">({gen.region})</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* ABILITIES panel */}
+                      {pickerColumnPanel === 'abilities' && (
+                        <div>
+                          <div className="text-[10px] font-bold uppercase text-slate-500 mb-2">Filter by Ability:</div>
+                          <div className="max-h-40 overflow-y-auto grid grid-cols-3 sm:grid-cols-4 gap-1">
+                            {abilitiesList.map((ab) => (
+                              <button
+                                key={ab.id}
+                                onClick={() => { setPokemonAbilityFilter(pokemonAbilityFilter === ab.name ? '' : ab.name); setPickerColumnPanel('none'); }}
+                                className="text-left px-2.5 py-1.5 rounded-lg text-[10px] font-medium border transition-colors truncate"
+                                style={{
+                                  background: pokemonAbilityFilter === ab.name ? 'var(--color-primary)' : 'var(--bg-card)',
+                                  color: pokemonAbilityFilter === ab.name ? '#fff' : 'var(--text-secondary)',
+                                  borderColor: 'var(--border-primary)',
+                                }}
+                              >
+                                {ab.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* STATS panel */}
+                      {pickerColumnPanel === 'stats' && (
+                        <div>
+                          <div className="text-[10px] font-bold uppercase text-slate-500 mb-2">Min Stat Filter (slide or type):</div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {(['hp', 'atk', 'def', 'spa', 'spd', 'spe', 'bst'] as const).map((stat) => (
+                              <div key={stat}>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-[10px] font-bold uppercase" style={{ color: stat === 'bst' ? '#a78bfa' : STAT_COLORS[stat as StatName] || 'var(--text-secondary)' }}>
+                                    {stat === 'bst' ? 'BST' : stat.toUpperCase()}
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={stat === 'bst' ? 800 : 255}
+                                    value={statFilters[stat] || ''}
+                                    onChange={(e) => setStatFilters(prev => ({ ...prev, [stat]: parseInt(e.target.value) || 0 }))}
+                                    className="w-14 text-right text-[11px] font-mono font-bold rounded border px-1 py-0.5 outline-none"
+                                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border-primary)', color: 'var(--text-primary)' }}
+                                  />
+                                </div>
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={stat === 'bst' ? 800 : 255}
+                                  value={statFilters[stat] || 0}
+                                  onChange={(e) => setStatFilters(prev => ({ ...prev, [stat]: parseInt(e.target.value) }))}
+                                  className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                                  style={{ accentColor: stat === 'bst' ? '#a78bfa' : STAT_COLORS[stat as StatName] || 'var(--color-primary)' }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          <button
+                            onClick={() => setStatFilters({ hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0, bst: 0 })}
+                            className="mt-2 text-[10px] px-2 py-0.5 rounded border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 transition-colors"
+                          >
+                            Reset Stats
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* ── Column Headers (clickable to open filter panel) ── */}
+              <div
+                className="grid items-center text-[10px] font-bold uppercase tracking-wider border-b px-4 py-2 flex-shrink-0"
+                style={{
+                  gridTemplateColumns: '2.5rem 2.5rem 1fr 1fr 1fr 2.2rem 2.2rem 2.2rem 2.2rem 2.2rem 2.2rem 2.8rem',
+                  borderColor: 'var(--border-primary)',
+                  background: 'var(--bg-secondary)',
+                  color: 'var(--text-tertiary)',
+                }}
+              >
+                <span />
+                <button
+                  onClick={() => { const dir = pokemonSortKey === 'num' ? (pokemonSortDir === 'asc' ? 'desc' : 'asc') : 'asc'; setPokemonSortKey('num'); setPokemonSortDir(dir); setPickerColumnPanel(pickerColumnPanel === 'gen' ? 'none' : 'gen'); }}
+                  className={`text-left hover:text-white transition-colors flex items-center gap-0.5 ${pickerColumnPanel === 'gen' || pokemonSortKey === 'num' ? 'text-white' : ''}`}
+                >#</button>
+                <button
+                  onClick={() => { const dir = pokemonSortKey === 'name' ? (pokemonSortDir === 'asc' ? 'desc' : 'asc') : 'asc'; setPokemonSortKey('name'); setPokemonSortDir(dir); setPickerColumnPanel('none'); }}
+                  className={`text-left hover:text-white transition-colors ${pokemonSortKey === 'name' ? 'text-white' : ''}`}
+                >Name {pokemonSortKey === 'name' ? (pokemonSortDir === 'asc' ? '↑' : '↓') : ''}</button>
+                <button
+                  onClick={() => setPickerColumnPanel(pickerColumnPanel === 'types' ? 'none' : 'types')}
+                  className={`text-left hover:text-white transition-colors ${pickerColumnPanel === 'types' || pokemonTypeFilter !== 'All' ? 'text-indigo-400' : ''}`}
+                >Types {pokemonTypeFilter !== 'All' ? '●' : ''}</button>
+                <button
+                  onClick={() => setPickerColumnPanel(pickerColumnPanel === 'abilities' ? 'none' : 'abilities')}
+                  className={`text-left hover:text-white transition-colors ${pickerColumnPanel === 'abilities' || pokemonAbilityFilter ? 'text-indigo-400' : ''}`}
+                >Abilities {pokemonAbilityFilter ? '●' : ''}</button>
+                {(['hp', 'atk', 'def', 'spa', 'spd', 'spe'] as const).map((stat) => (
+                  <button
+                    key={stat}
+                    onClick={() => {
+                      const dir = pokemonSortKey === stat ? (pokemonSortDir === 'asc' ? 'desc' : 'asc') : 'desc';
+                      setPokemonSortKey(stat);
+                      setPokemonSortDir(dir);
+                      setPickerColumnPanel(pickerColumnPanel === 'stats' ? 'none' : 'stats');
+                    }}
+                    className={`text-center hover:text-white transition-colors ${pokemonSortKey === stat || (pickerColumnPanel === 'stats' && statFilters[stat] > 0) ? 'text-white' : ''}`}
+                    style={{ color: statFilters[stat] > 0 ? STAT_COLORS[stat] : undefined }}
+                  >
+                    {stat === 'spa' ? 'SpA' : stat === 'spd' ? 'SpD' : stat === 'spe' ? 'Spe' : stat.toUpperCase()}
+                    {pokemonSortKey === stat ? (pokemonSortDir === 'asc' ? '↑' : '↓') : ''}
+                  </button>
+                ))}
+                <button
+                  onClick={() => {
+                    const dir = pokemonSortKey === 'bst' ? (pokemonSortDir === 'asc' ? 'desc' : 'asc') : 'desc';
+                    setPokemonSortKey('bst');
+                    setPokemonSortDir(dir);
+                    setPickerColumnPanel(pickerColumnPanel === 'stats' ? 'none' : 'stats');
+                  }}
+                  className={`text-center hover:text-white transition-colors ${pokemonSortKey === 'bst' || statFilters['bst'] > 0 ? 'text-violet-400' : ''}`}
+                >
+                  BST {pokemonSortKey === 'bst' ? (pokemonSortDir === 'asc' ? '↑' : '↓') : ''}
+                </button>
               </div>
 
-              {/* Grid */}
-              <div className="overflow-y-auto p-3" style={{ flex: 1 }}>
+              {/* ── Pokémon Table Rows ── */}
+              <div className="overflow-y-auto flex-1">
                 {filteredPokemon.length === 0 ? (
-                  <div className="text-center py-10 text-sm text-slate-400">No Pokémon found.</div>
+                  <div className="text-center py-12 text-sm" style={{ color: 'var(--text-tertiary)' }}>
+                    No Pokémon match your filters.
+                  </div>
                 ) : (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-                    {filteredPokemon.map((s) => (
+                  filteredPokemon.map((s) => {
+                    const isSelected = pokemon.species === s.name;
+                    return (
                       <button
                         key={s.id}
-                        onClick={() => {
-                          handleSpeciesChange(s.name);
-                          setPokemonPickerOpen(false);
-                        }}
-                        className={`flex flex-col items-center gap-1 rounded-xl p-2 text-center border transition-all hover:border-indigo-500 hover:scale-105 ${
-                          pokemon.species === s.name ? 'border-indigo-500 ring-2 ring-indigo-500/30' : ''
-                        }`}
+                        onClick={() => { handleSpeciesChange(s.name); setPokemonPickerOpen(false); setPickerColumnPanel('none'); }}
+                        className="w-full grid items-center px-4 py-1.5 border-b transition-colors hover:bg-white/5 text-left"
                         style={{
-                          background: pokemon.species === s.name ? 'rgba(99,102,241,0.15)' : 'var(--bg-secondary)',
-                          borderColor: pokemon.species === s.name ? undefined : 'var(--border-primary)',
+                          gridTemplateColumns: '2.5rem 2.5rem 1fr 1fr 1fr 2.2rem 2.2rem 2.2rem 2.2rem 2.2rem 2.2rem 2.8rem',
+                          borderColor: 'var(--border-primary)',
+                          background: isSelected ? 'rgba(99,102,241,0.12)' : undefined,
                         }}
                       >
-                        <PokemonSprite name={s.name} dexNum={s.num} size={52} animated={false} />
-                        <div className="text-[10px] font-semibold text-white leading-tight truncate w-full">
-                          {s.name}
+                        {/* Sprite */}
+                        <div className="flex items-center justify-center">
+                          <PokemonSprite name={s.name} dexNum={s.num} size={32} animated={false} />
                         </div>
-                        <div className="flex gap-0.5 flex-wrap justify-center">
+                        {/* Dex # */}
+                        <span className="text-[10px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
+                          #{String(s.num).padStart(3, '0')}
+                        </span>
+                        {/* Name */}
+                        <span className={`text-sm font-semibold truncate pr-2 ${isSelected ? 'text-indigo-300' : 'text-white'}`}>
+                          {s.name}
+                        </span>
+                        {/* Types */}
+                        <div className="flex gap-1 flex-wrap">
                           {s.types.map((t) => (
                             <TypeBadge key={t} type={t as PokemonType} size="sm" />
                           ))}
                         </div>
-                        <div className="text-[9px] text-slate-500 font-mono">BST {s.bst}</div>
+                        {/* Abilities */}
+                        <div className="text-[10px] leading-tight pr-2" style={{ color: 'var(--text-secondary)' }}>
+                          {s.abilities.slice(0, 2).join(' / ')}
+                          {s.hiddenAbility && (
+                            <span className="block opacity-60 italic">{s.hiddenAbility}</span>
+                          )}
+                        </div>
+                        {/* Stats */}
+                        {(['hp', 'atk', 'def', 'spa', 'spd', 'spe'] as const).map((stat) => (
+                          <span
+                            key={stat}
+                            className="text-center text-[11px] font-mono font-bold"
+                            style={{ color: statFilters[stat] > 0 && s.baseStats[stat as StatName] >= statFilters[stat] ? STAT_COLORS[stat as StatName] : 'var(--text-secondary)' }}
+                          >
+                            {s.baseStats[stat as StatName]}
+                          </span>
+                        ))}
+                        {/* BST */}
+                        <span
+                          className="text-center text-[11px] font-mono font-bold"
+                          style={{ color: statFilters['bst'] > 0 && s.bst >= statFilters['bst'] ? '#a78bfa' : 'var(--text-tertiary)' }}
+                        >
+                          {s.bst}
+                        </span>
                       </button>
-                    ))}
-                  </div>
+                    );
+                  })
                 )}
               </div>
             </motion.div>
