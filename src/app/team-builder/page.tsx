@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
   Swords,
@@ -13,16 +13,25 @@ import {
   Edit3,
   Star,
   FolderOpen,
+  X,
 } from 'lucide-react';
 import { useTeamStore } from '@/stores/team-store';
 import { PokemonSprite } from '@/components/shared/PokemonSprite';
 import { TypeBadge } from '@/components/shared/TypeBadge';
-import { getAllSpecies, getSpecies } from '@/lib/pokemon/data-provider';
-import type { PokemonType } from '@/types/pokemon';
+import { getAllSpecies, getAllAbilities, getSpecies, GENERATIONS } from '@/lib/pokemon/data-provider';
+import type { PokemonType, StatName } from '@/types/pokemon';
 import { createEmptyPokemon } from '@/types/pokemon';
 import { PokemonEditorFull } from '@/components/team/PokemonEditorFull';
 import { ShowdownPasteModal } from '@/components/team/ShowdownPasteModal';
+import { TYPE_COLORS } from '@/lib/pokemon/sprites';
+import { STAT_COLORS } from '@/types/pokemon';
 import Fuse from 'fuse.js';
+
+const POKEMON_TYPES: PokemonType[] = [
+  'Normal', 'Fire', 'Water', 'Electric', 'Grass', 'Ice',
+  'Fighting', 'Poison', 'Ground', 'Flying', 'Psychic', 'Bug',
+  'Rock', 'Ghost', 'Dragon', 'Dark', 'Steel', 'Fairy',
+];
 
 export default function TeamBuilderPage() {
   const {
@@ -53,6 +62,17 @@ export default function TeamBuilderPage() {
   const [showSearch, setShowSearch] = useState(false);
   const [showTeamShowdownModal, setShowTeamShowdownModal] = useState(false);
   const [showImportModalInList, setShowImportModalInList] = useState(false);
+
+  // Picker filter state
+  const [pickerTypeFilter, setPickerTypeFilter] = useState<PokemonType | 'All'>('All');
+  const [pickerGenFilter, setPickerGenFilter] = useState<number | 'All'>('All');
+  const [pickerAbilityFilter, setPickerAbilityFilter] = useState('');
+  const [pickerSortKey, setPickerSortKey] = useState<'num' | 'name' | 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe' | 'bst'>('num');
+  const [pickerSortDir, setPickerSortDir] = useState<'asc' | 'desc'>('asc');
+  const [pickerColumnPanel, setPickerColumnPanel] = useState<'none' | 'types' | 'abilities' | 'stats' | 'gen'>('none');
+  const [pickerStatFilters, setPickerStatFilters] = useState<Record<string, number>>({
+    hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0, bst: 0,
+  });
 
   const activeTeam = useMemo(
     () => teams.find((t) => t.id === activeTeamId) ?? null,
@@ -98,6 +118,7 @@ export default function TeamBuilderPage() {
 
   // Pokémon species search for adding slot
   const allSpecies = useMemo(() => getAllSpecies(9), []);
+  const allAbilitiesList = useMemo(() => getAllAbilities(9), []);
   const speciesFuse = useMemo(
     () =>
       new Fuse(allSpecies, {
@@ -108,10 +129,49 @@ export default function TeamBuilderPage() {
     [allSpecies]
   );
 
-  const searchResults = useMemo(() => {
-    if (!searchQuery.trim()) return allSpecies.slice(0, 100);
-    return speciesFuse.search(searchQuery, { limit: 100 }).map((r) => r.item);
-  }, [searchQuery, speciesFuse, allSpecies]);
+  const pickerResults = useMemo(() => {
+    let result = searchQuery.trim()
+      ? speciesFuse.search(searchQuery, { limit: 500 }).map((r) => r.item)
+      : [...allSpecies];
+
+    if (pickerTypeFilter !== 'All') {
+      result = result.filter((s) => s.types.includes(pickerTypeFilter));
+    }
+    if (pickerGenFilter !== 'All') {
+      result = result.filter((s) => s.generation === pickerGenFilter);
+    }
+    if (pickerAbilityFilter) {
+      const ab = pickerAbilityFilter.toLowerCase();
+      result = result.filter((s) =>
+        s.abilities.some((a) => a.toLowerCase() === ab) ||
+        (s.hiddenAbility && s.hiddenAbility.toLowerCase() === ab)
+      );
+    }
+    for (const [stat, minVal] of Object.entries(pickerStatFilters)) {
+      if (minVal > 0) {
+        if (stat === 'bst') result = result.filter((s) => s.bst >= minVal);
+        else result = result.filter((s) => s.baseStats[stat as StatName] >= minVal);
+      }
+    }
+    result.sort((a, b) => {
+      if (pickerSortKey === 'name') {
+        return pickerSortDir === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
+      }
+      const aVal = pickerSortKey === 'bst' ? a.bst : pickerSortKey === 'num' ? a.num : a.baseStats[pickerSortKey as StatName];
+      const bVal = pickerSortKey === 'bst' ? b.bst : pickerSortKey === 'num' ? b.num : b.baseStats[pickerSortKey as StatName];
+      return pickerSortDir === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+    return result.slice(0, 400);
+  }, [allSpecies, speciesFuse, searchQuery, pickerTypeFilter, pickerGenFilter, pickerAbilityFilter, pickerStatFilters, pickerSortKey, pickerSortDir]);
+
+  const hasPickerFilters = pickerTypeFilter !== 'All' || pickerGenFilter !== 'All' || !!pickerAbilityFilter || Object.values(pickerStatFilters).some(v => v > 0);
+
+  const clearPickerFilters = () => {
+    setPickerTypeFilter('All');
+    setPickerGenFilter('All');
+    setPickerAbilityFilter('');
+    setPickerStatFilters({ hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0, bst: 0 });
+  };
 
   const handleAddPokemon = useCallback(
     (speciesName: string) => {
@@ -495,76 +555,234 @@ export default function TeamBuilderPage() {
         </motion.div>
       )}
 
-      {/* Add Pokémon Search Modal */}
-      {showSearch && (
-        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[10vh] p-4">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => {
-              setShowSearch(false);
-              setSearchQuery('');
-            }}
-          />
+      {/* Add Pokémon Search Modal — Showdown Table Style */}
+      <AnimatePresence>
+        {showSearch && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm"
+              onClick={() => { setShowSearch(false); setSearchQuery(''); setPickerColumnPanel('none'); }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: -16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: -16 }}
+              transition={{ duration: 0.18 }}
+              className="fixed left-1/2 top-[3%] z-[101] w-[98%] max-w-4xl -translate-x-1/2 rounded-2xl border flex flex-col"
+              style={{
+                background: 'var(--bg-card)',
+                borderColor: 'var(--border-primary)',
+                boxShadow: '0 25px 80px rgba(0,0,0,0.7)',
+                maxHeight: '93vh',
+              }}
+            >
+              {/* Search */}
+              <div className="flex items-center gap-3 px-4 pt-4 pb-3 border-b" style={{ borderColor: 'var(--border-primary)' }}>
+                <Search className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                <input
+                  autoFocus
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setPickerColumnPanel('none'); }}
+                  onKeyDown={(e) => { if (e.key === 'Escape') { setShowSearch(false); setSearchQuery(''); } }}
+                  placeholder="Search Pokémon or form (e.g. Charizard, Steelix-Mega)..."
+                  className="flex-1 bg-transparent text-sm outline-none"
+                  style={{ color: 'var(--text-primary)' }}
+                />
+                <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>{pickerResults.length} results</span>
+                <button
+                  onClick={() => { setShowSearch(false); setSearchQuery(''); setPickerColumnPanel('none'); }}
+                  className="text-xs px-2.5 py-1 rounded-lg ml-1"
+                  style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
+                >
+                  ESC
+                </button>
+              </div>
 
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: -20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            className="relative z-10 w-full max-w-3xl rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden shadow-2xl flex flex-col max-h-[80vh]"
-          >
-            <div className="flex items-center gap-3 border-b border-slate-800 px-4 py-3">
-              <Search className="h-5 w-5 text-slate-400" />
-              <input
-                autoFocus
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search Pokémon or form (e.g. Steelix, Steelix-Mega, Charizard-Gmax)..."
-                className="flex-1 bg-transparent text-sm outline-none text-white"
-              />
-              <button
-                onClick={() => {
-                  setShowSearch(false);
-                  setSearchQuery('');
-                }}
-                className="rounded-lg px-2.5 py-1 text-xs font-medium bg-slate-800 text-slate-300"
-              >
-                ESC
-              </button>
-            </div>
+              {/* Active Filter Tags */}
+              {hasPickerFilters && (
+                <div className="flex items-center gap-2 flex-wrap px-4 py-2 border-b" style={{ borderColor: 'var(--border-primary)' }}>
+                  <span className="text-[11px] font-semibold" style={{ color: 'var(--text-tertiary)' }}>Filters:</span>
+                  {pickerTypeFilter !== 'All' && (
+                    <span
+                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border cursor-pointer hover:opacity-80"
+                      style={{ borderColor: TYPE_COLORS[pickerTypeFilter]?.bg || 'var(--border-primary)', color: TYPE_COLORS[pickerTypeFilter]?.text || '#fff', background: (TYPE_COLORS[pickerTypeFilter]?.bg || 'var(--bg-secondary)') + '33' }}
+                      onClick={() => setPickerTypeFilter('All')}
+                    >
+                      {pickerTypeFilter} <X className="h-3 w-3" />
+                    </span>
+                  )}
+                  {pickerGenFilter !== 'All' && (
+                    <span
+                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border cursor-pointer hover:opacity-80"
+                      style={{ borderColor: 'var(--border-secondary)', color: 'var(--text-primary)', background: 'var(--bg-secondary)' }}
+                      onClick={() => setPickerGenFilter('All')}
+                    >
+                      {GENERATIONS.find(g => g.num === pickerGenFilter)?.name} <X className="h-3 w-3" />
+                    </span>
+                  )}
+                  {pickerAbilityFilter && (
+                    <span
+                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border cursor-pointer hover:opacity-80"
+                      style={{ borderColor: 'var(--border-secondary)', color: 'var(--text-primary)', background: 'var(--bg-secondary)' }}
+                      onClick={() => setPickerAbilityFilter('')}
+                    >
+                      {pickerAbilityFilter} <X className="h-3 w-3" />
+                    </span>
+                  )}
+                  {Object.entries(pickerStatFilters).filter(([, v]) => v > 0).map(([stat, val]) => (
+                    <span
+                      key={stat}
+                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border cursor-pointer hover:opacity-80"
+                      style={{ borderColor: 'var(--border-secondary)', color: STAT_COLORS[stat as StatName] || '#fff', background: 'var(--bg-secondary)' }}
+                      onClick={() => setPickerStatFilters(prev => ({ ...prev, [stat]: 0 }))}
+                    >
+                      {stat.toUpperCase()} ≥{val} <X className="h-3 w-3" />
+                    </span>
+                  ))}
+                  <button onClick={clearPickerFilters} className="text-[10px] px-2 py-0.5 rounded-md border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 transition-colors">
+                    Clear All
+                  </button>
+                </div>
+              )}
 
-            <div className="overflow-y-auto p-3 flex-1">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                {searchResults.map((species) => (
-                  <button
-                    key={species.name}
-                    onClick={() => handleAddPokemon(species.name)}
-                    className="flex items-center gap-3 rounded-xl p-3 text-left transition-all card card-interactive bg-slate-950 border-slate-800 hover:border-indigo-500"
+              {/* Column Filter Panels */}
+              <AnimatePresence>
+                {pickerColumnPanel !== 'none' && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="border-b overflow-hidden"
+                    style={{ borderColor: 'var(--border-primary)' }}
                   >
-                    <PokemonSprite
-                      name={species.name}
-                      dexNum={species.num}
-                      size={44}
-                      animated={false}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-bold truncate text-white">
-                        {species.name}
-                      </div>
-                      <div className="flex gap-1 mt-1">
-                        {species.types.map((t) => (
-                          <TypeBadge key={t} type={t} size="sm" />
-                        ))}
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-mono mt-1">
-                        BST: {species.bst}
-                      </div>
+                    <div className="p-3" style={{ background: 'var(--bg-secondary)' }}>
+                      {pickerColumnPanel === 'types' && (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className="text-[10px] font-bold uppercase text-slate-500 mr-1">Filter by Type:</span>
+                          <button onClick={() => { setPickerTypeFilter('All'); setPickerColumnPanel('none'); }} className="px-2.5 py-1 rounded-lg font-medium text-[10px] border transition-colors" style={{ background: pickerTypeFilter === 'All' ? 'var(--color-primary)' : 'var(--bg-card)', color: pickerTypeFilter === 'All' ? '#fff' : 'var(--text-secondary)', borderColor: 'var(--border-primary)' }}>All</button>
+                          {POKEMON_TYPES.map((type) => {
+                            const colors = TYPE_COLORS[type] ?? TYPE_COLORS['Normal'];
+                            const isActive = pickerTypeFilter === type;
+                            return (
+                              <button key={type} onClick={() => { setPickerTypeFilter(isActive ? 'All' : type); setPickerColumnPanel('none'); }} className="px-2.5 py-1 rounded-lg transition-all font-semibold uppercase tracking-wide text-[10px] border" style={{ background: isActive ? colors.bg : 'var(--bg-card)', color: isActive ? colors.text : 'var(--text-tertiary)', borderColor: isActive ? colors.bg : 'var(--border-primary)', opacity: isActive ? 1 : 0.75 }}>{type}</button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {pickerColumnPanel === 'gen' && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-bold uppercase text-slate-500 mr-1">Filter by Generation:</span>
+                          <button onClick={() => { setPickerGenFilter('All'); setPickerColumnPanel('none'); }} className="px-2.5 py-1 rounded-lg font-medium text-[10px] border transition-colors" style={{ background: pickerGenFilter === 'All' ? 'var(--color-primary)' : 'var(--bg-card)', color: pickerGenFilter === 'All' ? '#fff' : 'var(--text-secondary)', borderColor: 'var(--border-primary)' }}>All</button>
+                          {GENERATIONS.map((gen) => (
+                            <button key={gen.num} onClick={() => { setPickerGenFilter(pickerGenFilter === gen.num ? 'All' : gen.num); setPickerColumnPanel('none'); }} className="px-2.5 py-1 rounded-lg font-medium text-[10px] border transition-colors" style={{ background: pickerGenFilter === gen.num ? 'var(--color-primary)' : 'var(--bg-card)', color: pickerGenFilter === gen.num ? '#fff' : 'var(--text-secondary)', borderColor: 'var(--border-primary)' }}>
+                              {gen.name} <span className="opacity-60">({gen.region})</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {pickerColumnPanel === 'abilities' && (
+                        <div>
+                          <div className="text-[10px] font-bold uppercase text-slate-500 mb-2">Filter by Ability:</div>
+                          <div className="max-h-40 overflow-y-auto grid grid-cols-3 sm:grid-cols-4 gap-1">
+                            {allAbilitiesList.map((ab) => (
+                              <button key={ab.id} onClick={() => { setPickerAbilityFilter(pickerAbilityFilter === ab.name ? '' : ab.name); setPickerColumnPanel('none'); }} className="text-left px-2.5 py-1.5 rounded-lg text-[10px] font-medium border transition-colors truncate" style={{ background: pickerAbilityFilter === ab.name ? 'var(--color-primary)' : 'var(--bg-card)', color: pickerAbilityFilter === ab.name ? '#fff' : 'var(--text-secondary)', borderColor: 'var(--border-primary)' }}>
+                                {ab.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {pickerColumnPanel === 'stats' && (
+                        <div>
+                          <div className="text-[10px] font-bold uppercase text-slate-500 mb-2">Min Stat Filter:</div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {(['hp', 'atk', 'def', 'spa', 'spd', 'spe', 'bst'] as const).map((stat) => (
+                              <div key={stat}>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-[10px] font-bold uppercase" style={{ color: stat === 'bst' ? '#a78bfa' : STAT_COLORS[stat as StatName] || 'var(--text-secondary)' }}>{stat === 'bst' ? 'BST' : stat.toUpperCase()}</span>
+                                  <input type="number" min={0} max={stat === 'bst' ? 800 : 255} value={pickerStatFilters[stat] || ''} onChange={(e) => setPickerStatFilters(prev => ({ ...prev, [stat]: parseInt(e.target.value) || 0 }))} className="w-14 text-right text-[11px] font-mono font-bold rounded border px-1 py-0.5 outline-none" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-primary)', color: 'var(--text-primary)' }} />
+                                </div>
+                                <input type="range" min={0} max={stat === 'bst' ? 800 : 255} value={pickerStatFilters[stat] || 0} onChange={(e) => setPickerStatFilters(prev => ({ ...prev, [stat]: parseInt(e.target.value) }))} className="w-full h-1.5 rounded-full appearance-none cursor-pointer" style={{ accentColor: stat === 'bst' ? '#a78bfa' : STAT_COLORS[stat as StatName] || 'var(--color-primary)' }} />
+                              </div>
+                            ))}
+                          </div>
+                          <button onClick={() => setPickerStatFilters({ hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0, bst: 0 })} className="mt-2 text-[10px] px-2 py-0.5 rounded border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 transition-colors">Reset Stats</button>
+                        </div>
+                      )}
                     </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Column Headers */}
+              <div
+                className="grid items-center text-[10px] font-bold uppercase tracking-wider border-b px-4 py-2 flex-shrink-0"
+                style={{
+                  gridTemplateColumns: '2.5rem 2.5rem 1fr 1fr 1fr 2.2rem 2.2rem 2.2rem 2.2rem 2.2rem 2.2rem 2.8rem',
+                  borderColor: 'var(--border-primary)',
+                  background: 'var(--bg-secondary)',
+                  color: 'var(--text-tertiary)',
+                }}
+              >
+                <span />
+                <button onClick={() => { const d = pickerSortKey === 'num' ? (pickerSortDir === 'asc' ? 'desc' : 'asc') : 'asc'; setPickerSortKey('num'); setPickerSortDir(d); setPickerColumnPanel(pickerColumnPanel === 'gen' ? 'none' : 'gen'); }} className={`text-left hover:text-white transition-colors ${pickerColumnPanel === 'gen' || pickerSortKey === 'num' ? 'text-white' : ''}`}>#</button>
+                <button onClick={() => { const d = pickerSortKey === 'name' ? (pickerSortDir === 'asc' ? 'desc' : 'asc') : 'asc'; setPickerSortKey('name'); setPickerSortDir(d); setPickerColumnPanel('none'); }} className={`text-left hover:text-white transition-colors ${pickerSortKey === 'name' ? 'text-white' : ''}`}>Name {pickerSortKey === 'name' ? (pickerSortDir === 'asc' ? '↑' : '↓') : ''}</button>
+                <button onClick={() => setPickerColumnPanel(pickerColumnPanel === 'types' ? 'none' : 'types')} className={`text-left hover:text-white transition-colors ${pickerColumnPanel === 'types' || pickerTypeFilter !== 'All' ? 'text-indigo-400' : ''}`}>Types {pickerTypeFilter !== 'All' ? '●' : ''}</button>
+                <button onClick={() => setPickerColumnPanel(pickerColumnPanel === 'abilities' ? 'none' : 'abilities')} className={`text-left hover:text-white transition-colors ${pickerColumnPanel === 'abilities' || pickerAbilityFilter ? 'text-indigo-400' : ''}`}>Abilities {pickerAbilityFilter ? '●' : ''}</button>
+                {(['hp', 'atk', 'def', 'spa', 'spd', 'spe'] as const).map((stat) => (
+                  <button key={stat} onClick={() => { const d = pickerSortKey === stat ? (pickerSortDir === 'asc' ? 'desc' : 'asc') : 'desc'; setPickerSortKey(stat); setPickerSortDir(d); setPickerColumnPanel(pickerColumnPanel === 'stats' ? 'none' : 'stats'); }} className={`text-center hover:text-white transition-colors ${pickerSortKey === stat ? 'text-white' : ''}`} style={{ color: pickerStatFilters[stat] > 0 ? STAT_COLORS[stat] : undefined }}>
+                    {stat === 'spa' ? 'SpA' : stat === 'spd' ? 'SpD' : stat === 'spe' ? 'Spe' : stat.toUpperCase()}{pickerSortKey === stat ? (pickerSortDir === 'asc' ? '↑' : '↓') : ''}
                   </button>
                 ))}
+                <button onClick={() => { const d = pickerSortKey === 'bst' ? (pickerSortDir === 'asc' ? 'desc' : 'asc') : 'desc'; setPickerSortKey('bst'); setPickerSortDir(d); setPickerColumnPanel(pickerColumnPanel === 'stats' ? 'none' : 'stats'); }} className={`text-center hover:text-white transition-colors ${pickerSortKey === 'bst' ? 'text-violet-400' : ''}`}>
+                  BST {pickerSortKey === 'bst' ? (pickerSortDir === 'asc' ? '↑' : '↓') : ''}
+                </button>
               </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
+
+              {/* Pokémon Rows */}
+              <div className="overflow-y-auto flex-1">
+                {pickerResults.length === 0 ? (
+                  <div className="text-center py-12 text-sm" style={{ color: 'var(--text-tertiary)' }}>No Pokémon match your filters.</div>
+                ) : (
+                  pickerResults.map((species) => (
+                    <button
+                      key={species.name}
+                      onClick={() => handleAddPokemon(species.name)}
+                      className="w-full grid items-center px-4 py-1.5 border-b transition-colors hover:bg-white/5 text-left"
+                      style={{
+                        gridTemplateColumns: '2.5rem 2.5rem 1fr 1fr 1fr 2.2rem 2.2rem 2.2rem 2.2rem 2.2rem 2.2rem 2.8rem',
+                        borderColor: 'var(--border-primary)',
+                      }}
+                    >
+                      <div className="flex items-center justify-center">
+                        <PokemonSprite name={species.name} dexNum={species.num} size={32} animated={false} />
+                      </div>
+                      <span className="text-[10px] font-mono" style={{ color: 'var(--text-tertiary)' }}>#{String(species.num).padStart(3, '0')}</span>
+                      <span className="text-sm font-semibold truncate pr-2 text-white">{species.name}</span>
+                      <div className="flex gap-1 flex-wrap">
+                        {species.types.map((t) => (<TypeBadge key={t} type={t as PokemonType} size="sm" />))}
+                      </div>
+                      <div className="text-[10px] leading-tight pr-2" style={{ color: 'var(--text-secondary)' }}>
+                        {species.abilities.slice(0, 2).join(' / ')}
+                        {species.hiddenAbility && <span className="block opacity-60 italic">{species.hiddenAbility}</span>}
+                      </div>
+                      {(['hp', 'atk', 'def', 'spa', 'spd', 'spe'] as const).map((stat) => (
+                        <span key={stat} className="text-center text-[11px] font-mono font-bold" style={{ color: pickerStatFilters[stat] > 0 && species.baseStats[stat as StatName] >= pickerStatFilters[stat] ? STAT_COLORS[stat as StatName] : 'var(--text-secondary)' }}>
+                          {species.baseStats[stat as StatName]}
+                        </span>
+                      ))}
+                      <span className="text-center text-[11px] font-mono font-bold" style={{ color: pickerStatFilters['bst'] > 0 && species.bst >= pickerStatFilters['bst'] ? '#a78bfa' : 'var(--text-tertiary)' }}>{species.bst}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Team Showdown Import/Export Modal */}
       {(showTeamShowdownModal || showImportModalInList) && (
