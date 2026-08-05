@@ -341,3 +341,43 @@ export const GENERATIONS = [
   { num: 8, name: 'Gen 8', label: 'SS', region: 'Galar' },
   { num: 9, name: 'Gen 9', label: 'SV', region: 'Paldea' },
 ];
+
+const learnsetCache = new Map<string, Set<string>>();
+
+export async function getLearnsetForSpecies(speciesId: string): Promise<Set<string>> {
+  const spec = getSpecies(speciesId);
+  const baseName = spec?.baseSpecies || speciesId;
+  const cacheKey = baseName.toLowerCase();
+
+  if (learnsetCache.has(cacheKey)) {
+    return learnsetCache.get(cacheKey)!;
+  }
+
+  const ls = await gen9.learnsets.get(cacheKey);
+  const movesSet = new Set<string>();
+  if (ls && ls.learnset) {
+    for (const moveId of Object.keys(ls.learnset)) {
+      movesSet.add(moveId);
+    }
+  }
+  learnsetCache.set(cacheKey, movesSet);
+  return movesSet;
+}
+
+export async function filterSpeciesByMoves(
+  speciesList: FormattedSpecies[],
+  moveNames: string[]
+): Promise<FormattedSpecies[]> {
+  if (!moveNames || moveNames.length === 0) return speciesList;
+  const moveIds = moveNames.map((m) => m.toLowerCase().replace(/[^a-z0-9]/g, ''));
+
+  const matching: FormattedSpecies[] = [];
+  for (const s of speciesList) {
+    const ls = await getLearnsetForSpecies(s.id);
+    if (moveIds.every((mId) => ls.has(mId))) {
+      matching.push(s);
+    }
+  }
+  return matching;
+}
+
