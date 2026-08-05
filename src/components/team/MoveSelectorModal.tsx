@@ -2,9 +2,11 @@
 
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, AlertTriangle } from 'lucide-react';
-import { getAllMoves, getMove, type FormattedMove } from '@/lib/pokemon/data-provider';
+import { Search, AlertTriangle, X } from 'lucide-react';
+import { getAllMoves, getMove, type FormattedMove, getAllTypes } from '@/lib/pokemon/data-provider';
 import { TypeBadge } from '@/components/shared/TypeBadge';
+import type { PokemonType } from '@/types/pokemon';
+import { TYPE_COLORS } from '@/lib/pokemon/sprites';
 import Fuse from 'fuse.js';
 
 interface MoveSelectorModalProps {
@@ -13,6 +15,12 @@ interface MoveSelectorModalProps {
   onSelectMove: (moveName: string) => void;
   currentMoveSlot?: number;
 }
+
+const ALL_TYPES = [
+  'Normal', 'Fire', 'Water', 'Electric', 'Grass', 'Ice',
+  'Fighting', 'Poison', 'Ground', 'Flying', 'Psychic', 'Bug',
+  'Rock', 'Ghost', 'Dragon', 'Dark', 'Steel', 'Fairy',
+] as PokemonType[];
 
 export function MoveSelectorModal({
   isOpen,
@@ -23,6 +31,7 @@ export function MoveSelectorModal({
   const [query, setQuery] = useState('');
   const [showIllegalMoves, setShowIllegalMoves] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<'All' | 'Physical' | 'Special' | 'Status' | 'GMax' | 'ZMove' | 'Shadow'>('All');
+  const [typeFilter, setTypeFilter] = useState<PokemonType | 'All'>('All');
 
   const movesList = useMemo(() => getAllMoves(9), []);
 
@@ -56,8 +65,19 @@ export function MoveSelectorModal({
       result = result.filter((m) => m.isShadow);
     }
 
+    if (typeFilter !== 'All') {
+      result = result.filter((m) => m.type === typeFilter);
+    }
+
     return result.slice(0, 150);
-  }, [query, fuse, movesList, categoryFilter, showIllegalMoves]);
+  }, [query, fuse, movesList, categoryFilter, typeFilter, showIllegalMoves]);
+
+  const hasActiveFilters = categoryFilter !== 'All' || typeFilter !== 'All';
+
+  const clearFilters = () => {
+    setCategoryFilter('All');
+    setTypeFilter('All');
+  };
 
   if (!isOpen) return null;
 
@@ -119,11 +139,21 @@ export function MoveSelectorModal({
               />
               Show Illegal Moves
             </label>
+
+            {hasActiveFilters && (
+              <button
+                onClick={clearFilters}
+                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-2 rounded-xl border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+                Clear Filters
+              </button>
+            )}
           </div>
 
-          {/* Category & Special Moves Filters */}
+          {/* Category Filter */}
           <div className="flex items-center gap-1.5 text-xs flex-wrap">
-            <span style={{ color: 'var(--text-tertiary)' }}>Filter:</span>
+            <span style={{ color: 'var(--text-tertiary)' }} className="font-semibold">Category:</span>
             {(
               [
                 { id: 'All', label: 'All' },
@@ -147,6 +177,52 @@ export function MoveSelectorModal({
                 {cat.label}
               </button>
             ))}
+          </div>
+
+          {/* Type Filter */}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-semibold" style={{ color: 'var(--text-tertiary)' }}>Type:</span>
+              <button
+                onClick={() => setTypeFilter('All')}
+                className="px-2.5 py-1 rounded-lg transition-all font-medium text-xs border"
+                style={{
+                  background: typeFilter === 'All' ? 'var(--color-primary)' : 'var(--bg-secondary)',
+                  color: typeFilter === 'All' ? '#fff' : 'var(--text-secondary)',
+                  borderColor: typeFilter === 'All' ? 'transparent' : 'var(--border-primary)',
+                }}
+              >
+                All
+              </button>
+              {ALL_TYPES.map((type) => {
+                const colors = TYPE_COLORS[type] ?? TYPE_COLORS['Normal'];
+                const isActive = typeFilter === type;
+                return (
+                  <button
+                    key={type}
+                    onClick={() => setTypeFilter(typeFilter === type ? 'All' : type)}
+                    className="px-2.5 py-1 rounded-lg transition-all font-semibold uppercase tracking-wide text-[10px] border"
+                    style={{
+                      background: isActive ? colors.bg : 'var(--bg-secondary)',
+                      color: isActive ? colors.text : 'var(--text-tertiary)',
+                      borderColor: isActive ? colors.bg : 'var(--border-primary)',
+                      opacity: isActive ? 1 : 0.7,
+                    }}
+                  >
+                    {type}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Results count */}
+          <div className="text-xs font-semibold flex items-center justify-between px-1" style={{ color: 'var(--text-tertiary)' }}>
+            <span>
+              Showing <span className="text-white">{filteredMoves.length}</span> moves
+              {typeFilter !== 'All' && <span> · Type: <span className="text-white">{typeFilter}</span></span>}
+              {categoryFilter !== 'All' && <span> · Category: <span className="text-white">{categoryFilter}</span></span>}
+            </span>
           </div>
 
           {/* Move List */}

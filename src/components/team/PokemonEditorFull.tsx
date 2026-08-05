@@ -26,6 +26,7 @@ import {
   getAllSpecies,
   getLearnableMoves,
   getMove,
+  GENERATIONS,
   type FormattedMove,
 } from '@/lib/pokemon/data-provider';
 import { PokemonSprite } from '@/components/shared/PokemonSprite';
@@ -33,8 +34,15 @@ import { TypeBadge } from '@/components/shared/TypeBadge';
 import { ShowdownPasteModal } from './ShowdownPasteModal';
 import { exportShowdownSet } from '@/lib/pokemon/showdown-parser';
 import { STAT_NAMES, STAT_COLORS } from '@/types/pokemon';
+import { TYPE_COLORS } from '@/lib/pokemon/sprites';
 import { Dex } from '@pkmn/dex';
 import Fuse from 'fuse.js';
+
+const POKEMON_TYPES: PokemonType[] = [
+  'Normal', 'Fire', 'Water', 'Electric', 'Grass', 'Ice',
+  'Fighting', 'Poison', 'Ground', 'Flying', 'Psychic', 'Bug',
+  'Rock', 'Ghost', 'Dragon', 'Dark', 'Steel', 'Fairy',
+];
 
 const POPULAR_ITEM_NAMES = [
   'Air Balloon',
@@ -78,12 +86,20 @@ export function PokemonEditorFull({
   const [activeSection, setActiveSection] = useState<'moves' | 'stats' | 'items' | 'abilities'>('moves');
   const [activeMoveSlot, setActiveMoveSlot] = useState<number>(0);
   const [moveSearchQuery, setMoveSearchQuery] = useState('');
+  const [moveCategoryFilter, setMoveCategoryFilter] = useState<'All' | 'Physical' | 'Special' | 'Status'>('All');
+  const [moveTypeFilter, setMoveTypeFilter] = useState<PokemonType | 'All'>('All');
   const [showIllegalMoves, setShowIllegalMoves] = useState(false);
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [abilitySearchQuery, setAbilitySearchQuery] = useState('');
   const [showShowdownModal, setShowShowdownModal] = useState(false);
   const [copied, setCopied] = useState(false);
   const [learnableMoves, setLearnableMoves] = useState<FormattedMove[]>([]);
+
+  // Pokemon picker filter state
+  const [pokemonPickerOpen, setPokemonPickerOpen] = useState(false);
+  const [pokemonSearchQuery, setPokemonSearchQuery] = useState('');
+  const [pokemonTypeFilter, setPokemonTypeFilter] = useState<PokemonType | 'All'>('All');
+  const [pokemonGenFilter, setPokemonGenFilter] = useState<number | 'All'>('All');
 
   // EV Mode: 'standard' (510 EVs, max 252) vs 'champions' (66 EV Points, max 32)
   const [evMode, setEvMode] = useState<'standard' | 'champions'>('standard');
@@ -333,7 +349,7 @@ export function PokemonEditorFull({
     }
   };
 
-  // Requirement 2: Filtered Move List (Default shows ONLY legal moves that species can learn; displays ILLEGAL badge if illegal)
+  // Filtered Move List (Default shows ONLY legal moves that species can learn; displays ILLEGAL badge if illegal)
   const filteredMoves = useMemo(() => {
     let source = learnableMoves;
 
@@ -342,14 +358,47 @@ export function PokemonEditorFull({
       source = source.filter((m) => !m.isIllegal);
     }
 
-    if (!moveSearchQuery.trim()) return source;
+    if (moveSearchQuery.trim()) {
+      const fuse = new Fuse(source, {
+        keys: ['name', 'type', 'shortDesc'],
+        threshold: 0.3,
+      });
+      source = fuse.search(moveSearchQuery, { limit: 120 }).map((r) => r.item);
+    }
 
-    const fuse = new Fuse(source, {
-      keys: ['name', 'type', 'shortDesc'],
-      threshold: 0.3,
-    });
-    return fuse.search(moveSearchQuery, { limit: 120 }).map((r) => r.item);
-  }, [learnableMoves, moveSearchQuery, showIllegalMoves]);
+    if (moveCategoryFilter !== 'All') {
+      source = source.filter((m) => m.category === moveCategoryFilter);
+    }
+
+    if (moveTypeFilter !== 'All') {
+      source = source.filter((m) => m.type === moveTypeFilter);
+    }
+
+    return source;
+  }, [learnableMoves, moveSearchQuery, showIllegalMoves, moveCategoryFilter, moveTypeFilter]);
+
+  // All species list + fuse for pokemon picker
+  const allSpeciesList = useMemo(() => getAllSpecies(9), []);
+  const pokemonFuse = useMemo(
+    () => new Fuse(allSpeciesList, { keys: ['name'], threshold: 0.3 }),
+    [allSpeciesList]
+  );
+
+  const filteredPokemon = useMemo(() => {
+    let result = pokemonSearchQuery.trim()
+      ? pokemonFuse.search(pokemonSearchQuery, { limit: 200 }).map((r) => r.item)
+      : allSpeciesList;
+
+    if (pokemonTypeFilter !== 'All') {
+      result = result.filter((s) => s.types.includes(pokemonTypeFilter));
+    }
+
+    if (pokemonGenFilter !== 'All') {
+      result = result.filter((s) => s.generation === pokemonGenFilter);
+    }
+
+    return result.slice(0, 200);
+  }, [allSpeciesList, pokemonFuse, pokemonSearchQuery, pokemonTypeFilter, pokemonGenFilter]);
 
   // Filtered Items
   const popularItemsData = useMemo(() => {
@@ -462,28 +511,41 @@ export function PokemonEditorFull({
           />
           <div className="w-full space-y-1">
             <span className="text-[10px] uppercase font-bold text-slate-400">Pokémon / Form</span>
-            <select
-              value={pokemon.species}
-              onChange={(e) => handleSpeciesChange(e.target.value)}
-              className="w-full rounded-lg border px-2 py-1.5 text-xs font-bold outline-none cursor-pointer"
+            {/* Form selector if a species is already chosen */}
+            {availableForms.length > 1 && (
+              <select
+                value={pokemon.species}
+                onChange={(e) => handleSpeciesChange(e.target.value)}
+                className="w-full rounded-lg border px-2 py-1.5 text-xs font-bold outline-none cursor-pointer mb-1"
+                style={{
+                  background: 'var(--bg-card)',
+                  borderColor: 'var(--border-primary)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                {availableForms.map((f) => (
+                  <option key={f.name} value={f.name}>
+                    {f.name} (BST: {f.bst})
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              onClick={() => {
+                setPokemonPickerOpen(true);
+                setPokemonSearchQuery('');
+                setPokemonTypeFilter('All');
+                setPokemonGenFilter('All');
+              }}
+              className="w-full rounded-lg border px-2 py-1.5 text-xs font-bold outline-none cursor-pointer text-left truncate transition-colors hover:border-indigo-500"
               style={{
                 background: 'var(--bg-card)',
                 borderColor: 'var(--border-primary)',
-                color: 'var(--text-primary)',
+                color: pokemon.species ? 'var(--text-primary)' : 'var(--text-tertiary)',
               }}
             >
-              {availableForms.length > 0
-                ? availableForms.map((f) => (
-                    <option key={f.name} value={f.name}>
-                      {f.name} (BST: {f.bst})
-                    </option>
-                  ))
-                : getAllSpecies(9).slice(0, 300).map((s) => (
-                    <option key={s.name} value={s.name}>
-                      {s.name}
-                    </option>
-                  ))}
-            </select>
+              {pokemon.species || 'Choose Pokémon...'}
+            </button>
           </div>
         </div>
 
@@ -729,7 +791,7 @@ export function PokemonEditorFull({
               />
             </div>
 
-            {/* Requirement 2: Toggle to show/hide illegal moves */}
+            {/* Toggle to show/hide illegal moves */}
             <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-300 bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl">
               <input
                 type="checkbox"
@@ -739,6 +801,59 @@ export function PokemonEditorFull({
               />
               Show Illegal Moves
             </label>
+          </div>
+
+          {/* Category Filter */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-bold uppercase text-slate-500">Category:</span>
+            {(['All', 'Physical', 'Special', 'Status'] as const).map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setMoveCategoryFilter(cat)}
+                className="px-2 py-0.5 rounded-lg transition-colors font-medium text-[10px]"
+                style={{
+                  background: moveCategoryFilter === cat ? 'var(--color-primary)' : 'var(--bg-card)',
+                  color: moveCategoryFilter === cat ? '#fff' : 'var(--text-secondary)',
+                }}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {/* Type Filter for Moves */}
+          <div className="flex items-center gap-1 flex-wrap">
+            <span className="text-[10px] font-bold uppercase text-slate-500 mr-1">Type:</span>
+            <button
+              onClick={() => setMoveTypeFilter('All')}
+              className="px-2 py-0.5 rounded-lg transition-colors font-medium text-[10px] border"
+              style={{
+                background: moveTypeFilter === 'All' ? 'var(--color-primary)' : 'var(--bg-card)',
+                color: moveTypeFilter === 'All' ? '#fff' : 'var(--text-secondary)',
+                borderColor: moveTypeFilter === 'All' ? 'transparent' : 'var(--border-primary)',
+              }}
+            >
+              All
+            </button>
+            {POKEMON_TYPES.map((type) => {
+              const colors = TYPE_COLORS[type] ?? TYPE_COLORS['Normal'];
+              const isActive = moveTypeFilter === type;
+              return (
+                <button
+                  key={type}
+                  onClick={() => setMoveTypeFilter(moveTypeFilter === type ? 'All' : type)}
+                  className="px-2 py-0.5 rounded-lg transition-all font-semibold uppercase tracking-wide text-[10px] border"
+                  style={{
+                    background: isActive ? colors.bg : 'var(--bg-card)',
+                    color: isActive ? colors.text : 'var(--text-tertiary)',
+                    borderColor: isActive ? colors.bg : 'var(--border-primary)',
+                    opacity: isActive ? 1 : 0.65,
+                  }}
+                >
+                  {type}
+                </button>
+              );
+            })}
           </div>
 
           <div className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b pb-2 flex justify-between px-2" style={{ borderColor: 'var(--border-primary)' }}>
@@ -1189,6 +1304,171 @@ export function PokemonEditorFull({
           }}
         />
       )}
+
+      {/* Pokémon Picker Modal */}
+      <AnimatePresence>
+        {pokemonPickerOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[130] bg-black/60 backdrop-blur-sm"
+              onClick={() => setPokemonPickerOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: -20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -20 }}
+              transition={{ duration: 0.2 }}
+              className="fixed left-1/2 top-[5%] z-[131] w-[95%] max-w-3xl -translate-x-1/2 rounded-2xl border flex flex-col"
+              style={{
+                background: 'var(--bg-card)',
+                borderColor: 'var(--border-primary)',
+                boxShadow: 'var(--shadow-xl)',
+                maxHeight: '88vh',
+              }}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border-primary)' }}>
+                <h3 className="font-bold text-base text-white">Choose Pokémon</h3>
+                <button
+                  onClick={() => setPokemonPickerOpen(false)}
+                  className="text-xs px-2.5 py-1 rounded-lg"
+                  style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
+                >
+                  ESC
+                </button>
+              </div>
+
+              {/* Filters */}
+              <div className="p-4 space-y-3 border-b" style={{ borderColor: 'var(--border-primary)' }}>
+                {/* Search */}
+                <div className="flex items-center gap-3 border rounded-xl px-3 py-2" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+                  <Search className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                  <input
+                    autoFocus
+                    value={pokemonSearchQuery}
+                    onChange={(e) => setPokemonSearchQuery(e.target.value)}
+                    placeholder="Search Pokémon or form (e.g. Charizard, Charizard-Gmax)..."
+                    className="flex-1 bg-transparent text-sm outline-none text-white"
+                  />
+                </div>
+
+                {/* Generation Filter */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-bold uppercase text-slate-500 mr-1">Gen:</span>
+                  <button
+                    onClick={() => setPokemonGenFilter('All')}
+                    className="px-2.5 py-1 rounded-lg transition-colors font-medium text-[10px] border"
+                    style={{
+                      background: pokemonGenFilter === 'All' ? 'var(--color-primary)' : 'var(--bg-secondary)',
+                      color: pokemonGenFilter === 'All' ? '#fff' : 'var(--text-secondary)',
+                      borderColor: pokemonGenFilter === 'All' ? 'transparent' : 'var(--border-primary)',
+                    }}
+                  >
+                    All
+                  </button>
+                  {GENERATIONS.map((gen) => (
+                    <button
+                      key={gen.num}
+                      onClick={() => setPokemonGenFilter(pokemonGenFilter === gen.num ? 'All' : gen.num)}
+                      className="px-2.5 py-1 rounded-lg transition-all font-medium text-[10px] border"
+                      style={{
+                        background: pokemonGenFilter === gen.num ? 'var(--color-primary)' : 'var(--bg-secondary)',
+                        color: pokemonGenFilter === gen.num ? '#fff' : 'var(--text-secondary)',
+                        borderColor: pokemonGenFilter === gen.num ? 'transparent' : 'var(--border-primary)',
+                      }}
+                    >
+                      {gen.name}
+                      <span className="ml-1 opacity-60">({gen.region})</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Type Filter */}
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className="text-[10px] font-bold uppercase text-slate-500 mr-1">Type:</span>
+                  <button
+                    onClick={() => setPokemonTypeFilter('All')}
+                    className="px-2.5 py-1 rounded-lg transition-colors font-medium text-[10px] border"
+                    style={{
+                      background: pokemonTypeFilter === 'All' ? 'var(--color-primary)' : 'var(--bg-secondary)',
+                      color: pokemonTypeFilter === 'All' ? '#fff' : 'var(--text-secondary)',
+                      borderColor: pokemonTypeFilter === 'All' ? 'transparent' : 'var(--border-primary)',
+                    }}
+                  >
+                    All
+                  </button>
+                  {POKEMON_TYPES.map((type) => {
+                    const colors = TYPE_COLORS[type] ?? TYPE_COLORS['Normal'];
+                    const isActive = pokemonTypeFilter === type;
+                    return (
+                      <button
+                        key={type}
+                        onClick={() => setPokemonTypeFilter(pokemonTypeFilter === type ? 'All' : type)}
+                        className="px-2.5 py-1 rounded-lg transition-all font-semibold uppercase tracking-wide text-[10px] border"
+                        style={{
+                          background: isActive ? colors.bg : 'var(--bg-secondary)',
+                          color: isActive ? colors.text : 'var(--text-tertiary)',
+                          borderColor: isActive ? colors.bg : 'var(--border-primary)',
+                          opacity: isActive ? 1 : 0.7,
+                        }}
+                      >
+                        {type}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Result count */}
+                <div className="text-[11px] text-slate-500">
+                  Showing <span className="text-slate-300 font-semibold">{filteredPokemon.length}</span> Pokémon
+                  {pokemonTypeFilter !== 'All' && <span> · Type: <span className="text-white">{pokemonTypeFilter}</span></span>}
+                  {pokemonGenFilter !== 'All' && <span> · {GENERATIONS.find(g => g.num === pokemonGenFilter)?.name}</span>}
+                </div>
+              </div>
+
+              {/* Grid */}
+              <div className="overflow-y-auto p-3" style={{ flex: 1 }}>
+                {filteredPokemon.length === 0 ? (
+                  <div className="text-center py-10 text-sm text-slate-400">No Pokémon found.</div>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                    {filteredPokemon.map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => {
+                          handleSpeciesChange(s.name);
+                          setPokemonPickerOpen(false);
+                        }}
+                        className={`flex flex-col items-center gap-1 rounded-xl p-2 text-center border transition-all hover:border-indigo-500 hover:scale-105 ${
+                          pokemon.species === s.name ? 'border-indigo-500 ring-2 ring-indigo-500/30' : ''
+                        }`}
+                        style={{
+                          background: pokemon.species === s.name ? 'rgba(99,102,241,0.15)' : 'var(--bg-secondary)',
+                          borderColor: pokemon.species === s.name ? undefined : 'var(--border-primary)',
+                        }}
+                      >
+                        <PokemonSprite name={s.name} dexNum={s.num} size={52} animated={false} />
+                        <div className="text-[10px] font-semibold text-white leading-tight truncate w-full">
+                          {s.name}
+                        </div>
+                        <div className="flex gap-0.5 flex-wrap justify-center">
+                          {s.types.map((t) => (
+                            <TypeBadge key={t} type={t as PokemonType} size="sm" />
+                          ))}
+                        </div>
+                        <div className="text-[9px] text-slate-500 font-mono">BST {s.bst}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
