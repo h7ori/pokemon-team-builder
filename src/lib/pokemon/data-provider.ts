@@ -28,10 +28,25 @@ export interface FormattedSpecies {
   isMega: boolean;
   isGmax: boolean;
   isRegional: boolean;
+  isPrimal: boolean;
+  isAlolan: boolean;
+  isGalarian: boolean;
+  isHisuian: boolean;
+  isPaldean: boolean;
+  isPseudoLegendary: boolean;
+  tags: string[];
 }
 
 export function getAllSpecies(gen: number = 9): FormattedSpecies[] {
   const speciesList: FormattedSpecies[] = [];
+
+  // Pseudo-legendary: final-stage (no evos), BST ~600, 3-stage family.
+  // We detect them by a hardcoded list since BST alone isn't sufficient.
+  const PSEUDO_LEGENDARY_IDS = new Set([
+    'dragonite', 'tyranitar', 'salamence', 'metagross', 'garchomp',
+    'hydreigon', 'goodra', 'kommooo', 'dragapult', 'baxcalibur',
+    'goodrahisui', 'kommoohisui',
+  ]);
 
   for (const s of Dex.species.all()) {
     if (s.exists && s.num > 0) {
@@ -45,7 +60,14 @@ export function getAllSpecies(gen: number = 9): FormattedSpecies[] {
 
       const isMega = !!(s.forme && s.forme.startsWith('Mega')) || !!s.isMega;
       const isGmax = s.forme === 'Gmax';
-      const isRegional = ['Alola', 'Galar', 'Hisui', 'Paldea'].includes(s.forme);
+      const isAlolan = s.forme === 'Alola';
+      const isGalarian = s.forme === 'Galar';
+      const isHisuian = s.forme === 'Hisui';
+      const isPaldean = s.forme === 'Paldea';
+      const isRegional = isAlolan || isGalarian || isHisuian || isPaldean;
+      const isPrimal = s.forme === 'Primal';
+      const tags: string[] = (s as unknown as { tags?: string[] }).tags ?? [];
+      const isPseudoLegendary = PSEUDO_LEGENDARY_IDS.has(s.id);
 
       speciesList.push({
         id: s.id,
@@ -74,6 +96,13 @@ export function getAllSpecies(gen: number = 9): FormattedSpecies[] {
         isMega,
         isGmax,
         isRegional,
+        isPrimal,
+        isAlolan,
+        isGalarian,
+        isHisuian,
+        isPaldean,
+        isPseudoLegendary,
+        tags,
       });
     }
   }
